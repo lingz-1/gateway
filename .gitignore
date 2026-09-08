@@ -1,0 +1,14 @@
+target/
+**/target/
+**/target-*/
+*.class
+*.pid
+.idea/
+.vscode/
+*.iml
+*.log
+.env
+application-local.yml
+semantic-threshold-report.txt
+Thumbs.db
+.DS_Store

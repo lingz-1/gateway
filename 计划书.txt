@@ -1,0 +1,445 @@
+# 灵枢（LingShu）—— AI能力开放与智能网关平台
+
+## 项目计划书 v1.0（最终冻结版）
+
+
+## 一、项目概述
+
+**项目名称**：灵枢（LingShu）—— AI能力开放与智能网关平台
+
+**项目定位**：企业级AI基础设施（AI Infra / LLMOps），位于Client App与Model Providers之间的统一AI网关，承担协议适配、智能路由、流量控制、预算管理、可观测性等核心职责。
+
+**核心价值**：让大模型能力像水电一样按需调用，解决多模型供应商API碎片化、成本不可控、合规审计、多租户资源竞争等平台级核心问题。
+
+**与StyleForge的协同**：StyleForge 负责上层 Agentic Intelligence（AI应用层），LingShu 负责底层 LLM Traffic / Routing / Cost / Reliability Infrastructure（AI基础设施层），形成从应用到基础架构的全栈 AI 工程视角。
+
+
+## 二、背景与动机
+
+### 2.1 问题定义
+
+在企业级LLM应用落地过程中，直接连接模型Provider是典型的反模式：
+
+1. **供应商锁定（Vendor Lock-in）** ：深度绑定单一模型，切换时涉及大量代码重构
+2. **可观测性缺失**：无法精确统计每个租户或用户的Token消耗，导致FinOps盲区
+3. **合规风险**：敏感数据在没有脱敏的情况下直接流向公有云
+4. **成本失控**：缺乏细粒度的流控和预算管理，单点故障或Bug可耗尽全部预算
+
+### 2.2 解决思路
+
+构建一个位于Client App与Model Providers之间的统一AI网关，承担协议适配、智能路由、流量控制、预算管理、可观测性等核心职责，实现"业务代码与模型解耦"的架构目标。
+
+
+## 三、系统架构
+
+### 3.1 整体架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   租户控制台 / OpenAPI SDK / Webhook             │
+│             申请Key · 配置策略 · 查看报表 · 管理Prompt模板        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              lingshu-gateway (Spring Cloud Gateway)              │
+│          认证鉴权 · 基础限流 · 请求路由 · 生成TraceId             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              lingshu-core (策略执行引擎——核心大脑)                │
+│   ┌────────────────────────────────────────────────────────┐   │
+│   │  ProcessorChain（按租户策略动态编排）                    │   │
+│   │  TraceProcessor → PIIProcessor → SemanticCacheProcessor │   │
+│   │  → BudgetReserveProcessor → ModelRouterProcessor        │   │
+│   │  → ProviderInvokeProcessor → UsageCollectorProcessor    │   │
+│   └────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+        ┌──────────┬──────────┼──────────┬──────────┐
+        ▼          ▼          ▼          ▼          ▼
+┌───────────┐┌───────────┐┌───────────┐┌───────────┐┌───────────┐
+│  语义缓存  ││  模型路由  ││  预算控制  ││  内容安全  ││  审计日志  │
+│  Service  ││  Service  ││  Service  ││  Service  ││  Service  │
+├───────────┤├───────────┤├───────────┤├───────────┤├───────────┤
+│向量相似度  ││动态降级    ││预算预扣    ││PII脱敏    ││全链路Trace │
+│语义去重    ││灰度发布    ││余额预警    ││合规检查    ││成本分摊    │
+│TTL管理    ││A/B测试    ││熔断恢复    ││           ││SLA监控    │
+└───────────┘└───────────┘└───────────┘└───────────┘└───────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    AI模型适配层（Spring AI 2.0.1）               │
+│      DeepSeek（原生ChatModel）· Qwen（OpenAI兼容）·            │
+│      智谱（OpenAI兼容）· 统一Provider抽象                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        基础设施层                               │
+│  Redis(多级缓存) · PostgreSQL+pgvector(事务/向量) ·              │
+│  Kafka(异步扣费/统计) · Prometheus+Grafana(监控)                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 架构设计原则
+
+1. **模型中立**：基于Spring AI 2.0.1的`ChatModel`抽象构建统一Provider层，切换底层模型只需修改配置
+2. **可插拔**：策略链基于责任链模式 + ProcessorRegistry，支持运行时动态编排
+3. **高可用**：熔断降级、多级缓存、异步解耦，确保核心链路可用性
+4. **可观测**：全链路Trace + 业务指标监控 + Token消耗追踪
+
+
+## 四、核心模块设计
+
+### 4.1 可插拔策略链引擎（核心大脑）
+
+**设计思路**：每个租户的调用链路由一组Processor按顺序执行，形成策略链。Gateway负责网络层cross-cutting concerns，Processor Engine负责AI request lifecycle。
+
+**策略链示例**：
+```
+请求 → TraceProcessor → PII脱敏Processor → 语义缓存Processor → 
+预算预扣Processor → 路由选择Processor → 模型调用Processor → 
+用量采集Processor → 响应
+```
+
+**技术实现**：
+- 基于**责任链模式** + **ProcessorRegistry**实现Processor的动态加载和运行时编排
+- 所有Processor启动时注册：`AuthProcessor`、`RateLimitProcessor`、`PIIProcessor`、`SemanticCacheProcessor`、`BudgetProcessor`、`ModelRouterProcessor`、`ProviderInvokeProcessor`、`UsageProcessor`
+- Nacos动态改变Processor的`enabled`、`order`配置，请求来到时Registry根据**当前策略**生成执行链
+- 支持**策略热更新**（通过配置中心修改后无需重启）
+
+**核心代码结构**：
+```java
+public interface GatewayProcessor {
+    int order();
+    boolean supports(GatewayContext context);
+    void process(GatewayContext context);
+}
+
+@Component
+public class ProcessorRegistry {
+    private final List<GatewayProcessor> processors;
+    
+    public List<GatewayProcessor> enabledProcessors(TenantPolicy policy) {
+        return processors.stream()
+                .filter(p -> policy.isEnabled(p.name()))
+                .sorted(comparingInt(GatewayProcessor::order))
+                .toList();
+    }
+}
+```
+
+### 4.2 智能模型路由（多目标动态决策）
+
+**设计思路**：每次请求动态决定调用哪个模型，综合考虑成本、质量、延迟等多维目标。
+
+**评分公式（归一化版本）** ：
+
+$$S_m = w_q \hat Q_m + w_c (1-\hat C_m) + w_l (1-\hat L_m) + w_r \hat R_m$$
+
+所有 $\hat Q,\hat C,\hat L,\hat R \in [0,1]$，经过Min-Max归一化处理，确保量纲统一。
+
+| 路由策略 | 实现方式 | 决策依据 |
+|----------|---------|----------|
+| **成本优先** | 根据当前预算余额自动选择更便宜的模型 | 实时余额 + 模型单价 |
+| **质量优先** | 复杂问题路由到高性能模型 | 意图分类器（规则或小模型预判） |
+| **延迟优先** | 根据各模型实时P99延迟选择最快者 | 滑动窗口统计 + 健康检查 |
+| **灰度发布** | 按比例分流到新模型版本 | 权重路由 + 流量染色 |
+| **熔断降级** | 异常率超阈值时自动切换备用模型 | 断路器模式 + 错误率统计 |
+
+**技术实现**：
+- 使用**Resilience4j**实现熔断降级
+- 通过**Micrometer**采集各模型的延迟和错误率指标
+- Router API与算法解耦：`RuleBasedRouter` → `WeightedScoreRouter`，支持平滑演进
+
+### 4.3 多租户预算控制（分布式限额管理）
+
+**设计思路**：每个租户有月度预算，调用时需实时扣费并精准控制。
+
+**核心机制**：
+
+1. **预算预扣**：调用前先预扣预算，使用Redis + Lua脚本保证原子性
+2. **实扣结算**：调用完成后根据实际Token消耗实扣，通过Kafka异步消费扣费消息
+3. **失败回滚**：若模型调用超时/失败，执行Lua脚本解冻Redis配额，投递回滚事件到Kafka，异步更新账单状态
+4. **账本分层**：Redis = 快速配额/预扣状态（运行时），PostgreSQL Ledger = 最终事实来源（Source of Truth），Kafka = 结算事件传输
+
+**幂等性保证**：
+- Kafka Consumer通过`reservation_id UNIQUE`实现业务幂等
+- 同一SettlementEvent投递多次，DB最终只有1条settlement记录，余额只扣一次
+
+### 4.4 语义缓存（降低Token消耗）
+
+**设计思路**：对于重复或高度相似的问题，直接返回缓存结果，跳过LLM推理。
+
+**三层命中策略**：
+
+1. **精确匹配**：基于MD5摘要 + tenant隔离的字符级命中（耗时<3ms）
+2. **语义匹配**：未命中则走向量检索，余弦相似度>阈值即返回（耗时约60ms）
+3. **LLM兜底**：仍未命中则调用模型，结果异步回写缓存
+
+**缓存表结构（复合隔离）** ：
+```sql
+CREATE TABLE cache_embeddings (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL,
+    task_type VARCHAR(32),          -- 'CODE' / 'WRITING' / 'QA'
+    model_family VARCHAR(32),       -- 生成该回答的模型
+    system_prompt_version VARCHAR(16),
+    question_hash VARCHAR(64),      -- MD5，用于精确匹配
+    question_text TEXT,
+    embedding vector(1024),         -- pgvector
+    answer TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    ttl_days INTEGER DEFAULT 7
+);
+
+CREATE INDEX idx_cache_tenant ON cache_embeddings(tenant_id, task_type);
+CREATE INDEX idx_cache_vector ON cache_embeddings USING HNSW (embedding vector_cosine_ops);
+```
+
+**"误中"问题防护**：
+- **第一阶段**：pgvector向量检索，余弦相似度阈值>0.92召回候选集
+- **第二阶段**：轻量级BGE-Reranker模型对候选集进行重排，结合租户/场景的元数据（Metadata）进行强隔离
+- **tenantId + taskType + systemPromptVersion**复合隔离确保跨租户、跨场景的缓存互不干扰
+
+**技术实现**：
+- 使用**pgvector**（PostgreSQL向量扩展）存储问题向量
+- 通过**Spring AI的VectorStore**抽象统一向量操作
+- 支持按租户、按场景独立配置缓存策略（TTL、相似度阈值）
+
+### 4.5 流式输出（SSE）场景下的Token计费
+
+在流式输出场景下，Token消耗需要在流结束时才能确定。实现两种互补方案：
+
+- **方案一（精准）** ：网关作为反向代理拦截SSE响应，在内存中拼接完整Response，流结束时使用JTokkit库进行离线Tokenizer计数
+- **方案二（依赖供应商）** ：DeepSeek/OpenAI等主流Provider在流式输出的最后一个Chunk中自带`usage`字段，网关解析最后一帧直接获取官方Token统计
+- **生产策略**：优先采用方案二（零额外开销），若供应商不支持则回退方案一
+
+### 4.6 内容安全与合规
+
+**精简实现**：仅保留PII脱敏Processor，使用正则表达式自动识别并脱敏PII信息（手机号、身份证号等），证明Processor Chain的可扩展性。
+
+### 4.7 全链路可观测性与成本分摊
+
+**设计思路**：每个请求生成TraceId，贯穿网关→策略链→模型调用的全过程。
+
+**核心设计**：
+- 记录每个Processor的耗时、输入/输出大小、Token消耗
+- 通过**Micrometer + Prometheus + Grafana**实现指标监控和告警
+- 每日定时聚合生成租户账单：总调用次数、总Token数、总费用、各模型占比
+
+
+## 五、技术栈清单（v1.0 最终冻结版）
+
+| 层级 | 技术选型 | 版本 | 用途 |
+|------|---------|------|------|
+| **语言** | Java | 21 | 核心语言，支持虚拟线程（JEP 444） |
+| **核心框架** | Spring Boot | 4.1.1 | 核心框架 |
+| **微服务** | Spring Cloud | 2025.1.2+ (Oakwood) | 服务治理、配置中心 |
+| **API网关** | Spring Cloud Gateway | 5.0.3（Cloud BOM管理） | 流量入口 |
+| **AI集成** | Spring AI | 2.0.1 | 统一模型调用抽象、VectorStore |
+| **缓存** | Caffeine（本地）+ Redis（分布式） | — | 多级缓存 |
+| **向量数据库** | PostgreSQL + pgvector | 16 + pgvector | 语义缓存向量存储 |
+| **消息队列** | Kafka | KRaft模式 | 异步扣费、统计 |
+| **可观测性** | Micrometer + Prometheus + Grafana | — | 监控、告警 |
+| **容器化** | Docker + Docker Compose | — | 本地部署与编排 |
+| **配置中心** | Nacos | — | 策略动态刷新 |
+
+
+## 六、Maven模块结构
+
+```
+lingshu/
+│
+├── pom.xml                          // 父POM，统一版本管理
+│
+├── lingshu-common/
+│   └── src/main/java/
+│       └── com.lingshu.common/
+│           ├── dto/                  // ChatRequest, ChatResponse
+│           ├── enums/                // GatewayStatus, Provider
+│           └── contracts/            // 错误契约
+│
+├── lingshu-gateway/
+│   └── src/main/java/
+│       └── com.lingshu.gateway/
+│           ├── GatewayApplication.java
+│           ├── filter/               // 全局认证、基础限流、TraceId生成
+│           └── config/               // Gateway路由配置
+│
+└── lingshu-core/
+    └── src/main/java/
+        └── com.lingshu.core/
+            ├── CoreApplication.java
+            ├── api/                  // /v1/chat/completions 端点
+            ├── processor/            // Processor接口、ProcessorRegistry、ProcessorEngine
+            │   ├── TraceProcessor
+            │   ├── PIIDesensitizationProcessor
+            │   ├── SemanticCacheProcessor
+            │   ├── BudgetReserveProcessor
+            │   ├── ModelRouterProcessor
+            │   ├── ProviderInvokeProcessor
+            │   └── UsageCollectorProcessor
+            ├── provider/             // ModelProvider抽象
+            │   ├── ModelProvider.java
+            │   ├── DeepSeekProvider   // spring-ai-starter-model-deepseek
+            │   ├── QwenProvider       // OpenAiChatModel + 阿里云OpenAI兼容端点
+            │   └── ZhipuProvider      // OpenAiChatModel + 智谱OpenAI兼容端点
+            ├── routing/              // ModelRouter接口 + 实现
+            │   ├── ModelRouter.java
+            │   ├── RuleBasedRouter
+            │   └── WeightedScoreRouter
+            └── observability/        // Micrometer埋点、Trace管理
+```
+
+**调用路径**：
+```
+POST /v1/chat/completions
+            │
+            ▼
+      lingshu-gateway :8080
+            │
+       Trace / Auth / RateLimit
+            │
+            ▼
+        lingshu-core :8081
+            │
+            ▼
+      ProcessorEngine
+            │
+   ┌────────┼──────────┐
+   ▼        ▼          ▼
+Trace    Router     ProviderInvoke
+                        │
+                ┌───────┼───────┐
+                ▼       ▼       ▼
+            DeepSeek   Qwen    Zhipu
+```
+
+
+## 七、Provider接入方案
+
+**关键设计**：Spring AI 2.0.1 官方提供了 DeepSeek 原生 `ChatModel` starter；Qwen 官方提供 OpenAI-compatible Chat API；智谱同样官方提供 OpenAI API 兼容接口。
+
+```java
+public interface ModelProvider {
+    String id();
+    ChatResponse invoke(ModelRequest request);
+    ProviderHealth health();
+}
+
+// DeepSeek：使用原生 DeepSeekChatModel
+// Qwen：使用 OpenAiChatModel + 阿里云 OpenAI-compatible endpoint
+// Zhipu：使用 OpenAiChatModel + 智谱 OpenAI-compatible endpoint
+```
+
+**ModelRouter 完全不需要知道底层是 `DeepSeekChatModel` 还是 `OpenAiChatModel`**，这才是真正的Provider abstraction。
+
+
+## 八、实施路线图
+
+### Week 1：纵向打通（最小可行链路）
+
+**目标**：打通 Gateway → Core → ProcessorChain → Router → Provider → LLM 的完整调用链路。
+
+**实现范围**：
+- 3个Maven模块创建完成
+- 仅实现3个Processor：`TraceProcessor`、`ModelRouterProcessor`、`ProviderInvokeProcessor`
+- Router使用简单规则（如`if prompt.length() > 100 then DeepSeek else Qwen`）
+- 至少接入2个Provider（Qwen + DeepSeek）
+
+**验收标准**：
+| # | 验收项 | 通过标准 |
+|---|--------|----------|
+| 1 | 多Provider | 同一API至少实际调用Qwen + DeepSeek |
+| 2 | ProcessorChain | trace → router → invoke 顺序真实执行 |
+| 3 | Router | 修改输入后可观察selected provider改变 |
+| 4 | Trace | 每个请求输出完整调用metadata |
+| 5 | Provider failure | 手动让首选Provider失败时，API返回明确可诊断错误（非500堆栈） |
+
+**Week 1 结束时日志示例**：
+```
+traceId=8f73a1b2-...
+tenantId=demo
+route=QWEN
+processor=TraceProcessor
+processor=ModelRouterProcessor
+processor=ProviderInvokeProcessor
+provider=qwen
+model=qwen-...
+inputTokens=...
+outputTokens=...
+latencyMs=...
+status=SUCCESS
+```
+
+### Week 2：语义缓存
+
+- 接入PostgreSQL + pgvector
+- 实现精确匹配（MD5）→ 向量检索 → LLM三层命中
+- 实现BGE-Reranker重排 + 元数据隔离
+- 跑出阈值实验曲线（threshold vs hit rate vs false hit rate）
+
+### Week 3：预算控制 + 异步结算
+
+- Redis Lua脚本实现原子预扣
+- Kafka异步消费实现实扣/回滚
+- 本地PostgreSQL账单表 + 幂等性保证
+- 定时任务扫描超时预扣单自动回滚
+
+### Week 4：可观测性 + 完善
+
+- Micrometer埋点 + Prometheus采集 + Grafana面板
+- 多租户策略配置（Nacos动态刷新）
+- 错误契约完善（结构化错误返回）
+- Docker Compose一键启动所有依赖
+
+### Week 5-6（有余力）：压测与优化
+
+- JMeter压测，验证吞吐量
+- 熔断降级（Resilience4j）
+- SSE流式计费
+
+
+## 九、项目亮点总结
+
+1. **平台级系统设计**：非单点功能，而是完整的AI能力开放平台，涉及多租户、配额、计费等ToB核心要素
+2. **可插拔策略链引擎**：基于责任链+ProcessorRegistry，支持运行时动态编排和租户级定制
+3. **分布式预算控制**：预扣+实扣+异步回滚+幂等保证，实现毫秒级多租户限额管理
+4. **智能多目标路由**：归一化评分公式综合考虑质量、成本、延迟动态选择最优模型，支持灰度发布和熔断降级
+5. **语义缓存降本**：三层命中策略（MD5→向量→LLM）+ BGE-Reranker重排 + 复合元数据隔离
+6. **生产级高可用**：熔断降级、多级缓存、异步解耦
+7. **全链路可观测**：从Trace到账单完整闭环，成本可量化、可追溯
+
+
+## 十、与StyleForge的协同定位
+
+| 项目 | StyleForge | LingShu |
+|------|------------|---------|
+| **定位** | AI Agent 应用系统 | AI Infra / AI Gateway |
+| **核心问题** | Agent如何自主完成复杂任务 | LLM请求如何可靠、高效地运行 |
+| **AI能力** | Multi-Agent、Tools、Memory、RAG | 模型路由、语义缓存、统一Provider |
+| **工程能力** | LangGraph、FastAPI、PostgreSQL | Java 21、Spring Boot 4.1、Spring Cloud、Redis、Kafka |
+| **可靠性** | Gate、Critic、bounded retry | 限流、熔断、预算、降级 |
+| **展示重点** | **AI应用怎么做深** | **AI基础设施怎么做稳** |
+
+**简历组合描述**：
+> 同时开发了面向C端的智能穿搭Agent（StyleForge）和面向企业的AI能力网关（LingShu），前者展示了Agentic应用的深度，后者体现了对LLM调用成本、可靠性、多租户隔离的工程理解，形成从应用到基础架构的全栈AI工程视角。
+
+
+## 十一、技术决策记录（ADR）
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| Java版本 | Java 21 | 虚拟线程正式特性（JEP 444），契合2026年新项目身份 |
+| Spring Boot | 4.1.1 | 当前最新稳定版 |
+| Spring Cloud | 2025.1.2 (Oakwood) | 支持Spring Boot 4.0.x及4.1.x |
+| Spring AI | 2.0.1 | 当前最新稳定版，ChatModel/VectorStore API成熟 |
+| Gateway vs Core分离 | 拆分两个应用 | Gateway负责网络层（WebFlux），Core负责业务逻辑（MVC），避免在Event Loop中执行同步LLM调用 |
+| Processor热插拔 | ProcessorRegistry + Nacos | `@ConditionalOnProperty`仅适合Bean创建阶段，运行时动态编排应使用注册表模式 |
+| Provider接入 | DeepSeek原生 + Qwen/智谱OpenAI兼容 | Spring AI 2.0.1有DeepSeek starter；Qwen和智谱提供OpenAI兼容端点 |
+
+---
+

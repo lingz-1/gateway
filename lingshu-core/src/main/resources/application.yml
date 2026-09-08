@@ -1,0 +1,110 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: lingshu-core
+  data:
+    redis:
+      host: ${LINGSHU_REDIS_HOST:127.0.0.1}
+      port: ${LINGSHU_REDIS_PORT:63790}
+      password: ${LINGSHU_REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
+  kafka:
+    bootstrap-servers: ${LINGSHU_KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: ${LINGSHU_KAFKA_CONSUMER_GROUP:lingshu-billing-settlement}
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+lingshu:
+  database:
+    migration-enabled: ${LINGSHU_DATABASE_MIGRATION_ENABLED:false}
+  tenant-policy:
+    persistence-enabled: ${LINGSHU_TENANT_POLICY_PERSISTENCE_ENABLED:false}
+    nacos:
+      enabled: ${LINGSHU_TENANT_POLICY_NACOS_ENABLED:false}
+      server-url: ${LINGSHU_NACOS_SERVER_URL:http://127.0.0.1:8848}
+      namespace-id: ${LINGSHU_NACOS_NAMESPACE_ID:public}
+      group-name: ${LINGSHU_NACOS_GROUP_NAME:LINGSHU}
+      data-id: ${LINGSHU_NACOS_DATA_ID:lingshu-tenant-policies.json}
+      access-token: ${LINGSHU_NACOS_ACCESS_TOKEN:}
+      timeout: ${LINGSHU_NACOS_TIMEOUT:2s}
+      refresh-delay-ms: ${LINGSHU_NACOS_REFRESH_DELAY_MS:5000}
+  security:
+    internal-admin-key-enabled: ${LINGSHU_INTERNAL_ADMIN_KEY_ENABLED:false}
+    internal-admin-key: ${LINGSHU_INTERNAL_ADMIN_KEY:}
+  cache:
+    exact:
+      enabled: true
+      store: ${LINGSHU_CACHE_EXACT_STORE:memory}
+      ttl: 10m
+      max-entries: 10000
+      prompt-version: v1
+    semantic:
+      enabled: ${LINGSHU_CACHE_SEMANTIC_ENABLED:false}
+      similarity-threshold: ${LINGSHU_CACHE_SEMANTIC_THRESHOLD:0.92}
+      ttl: 24h
+      embedding-dimension: ${LINGSHU_EMBEDDING_DIMENSION:64}
+      embedding-provider: ${LINGSHU_EMBEDDING_PROVIDER:lexical-hash}
+      embedding-model: ${LINGSHU_EMBEDDING_MODEL:}
+      embedding-endpoint: ${LINGSHU_EMBEDDING_ENDPOINT:http://127.0.0.1:11434/v1/embeddings}
+      embedding-api-key: ${LINGSHU_EMBEDDING_API_KEY:}
+      embedding-timeout: ${LINGSHU_EMBEDDING_TIMEOUT:10s}
+      embedding-max-input-chars: ${LINGSHU_EMBEDDING_MAX_INPUT_CHARS:20000}
+      jdbc-url: ${LINGSHU_POSTGRES_URL:jdbc:postgresql://127.0.0.1:54320/lingshu}
+      username: ${LINGSHU_POSTGRES_USER:lingshu}
+      password: ${LINGSHU_POSTGRES_PASSWORD:}
+      maximum-pool-size: 4
+  provider:
+    stub:
+      enabled: true
+      model: stub-echo-v1
+    fast-stub:
+      enabled: true
+      model: stub-fast-v1
+    deepseek:
+      enabled: ${LINGSHU_PROVIDER_DEEPSEEK_ENABLED:false}
+      model: ${LINGSHU_DEEPSEEK_MODEL:deepseek-v4flash}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      api-key: ${DEEPSEEK_API_KEY:}
+      timeout: ${LINGSHU_DEEPSEEK_TIMEOUT:60s}
+      max-attempts: ${LINGSHU_DEEPSEEK_MAX_ATTEMPTS:1}
+      retry-backoff: ${LINGSHU_DEEPSEEK_RETRY_BACKOFF:200ms}
+      max-concurrent-requests: ${LINGSHU_DEEPSEEK_MAX_CONCURRENT_REQUESTS:8}
+      circuit-failure-threshold: ${LINGSHU_DEEPSEEK_CIRCUIT_FAILURE_THRESHOLD:5}
+      circuit-open-duration: ${LINGSHU_DEEPSEEK_CIRCUIT_OPEN_DURATION:30s}
+  billing:
+    enabled: ${LINGSHU_BILLING_ENABLED:false}
+    virtual:
+      enabled: ${LINGSHU_VIRTUAL_BILLING_ENABLED:true}
+      persistence-enabled: ${LINGSHU_VIRTUAL_BILLING_PERSISTENCE_ENABLED:false}
+      initial-balance-cny: ${LINGSHU_VIRTUAL_INITIAL_BALANCE_CNY:10.00}
+      input-price-usd-per-million: ${LINGSHU_VIRTUAL_INPUT_PRICE_USD_PER_MILLION:0.22}
+      output-price-usd-per-million: ${LINGSHU_VIRTUAL_OUTPUT_PRICE_USD_PER_MILLION:0.66}
+      usd-to-cny: ${LINGSHU_VIRTUAL_USD_TO_CNY:7.20}
+    outbox:
+      enabled: ${LINGSHU_BILLING_OUTBOX_ENABLED:false}
+      batch-size: ${LINGSHU_BILLING_OUTBOX_BATCH_SIZE:100}
+      poll-interval: ${LINGSHU_BILLING_OUTBOX_POLL_INTERVAL:5s}
+      claim-timeout: ${LINGSHU_BILLING_OUTBOX_CLAIM_TIMEOUT:1m}
+      kafka-topic: ${LINGSHU_BILLING_KAFKA_TOPIC:lingshu.billing.events}
+    redis-key-prefix: ${LINGSHU_BILLING_REDIS_KEY_PREFIX:lingshu:budget:}
+    reservation-ttl: ${LINGSHU_BILLING_RESERVATION_TTL:5m}
+    jdbc-url: ${LINGSHU_BILLING_POSTGRES_URL:jdbc:postgresql://127.0.0.1:54320/lingshu}
+    username: ${LINGSHU_BILLING_POSTGRES_USER:lingshu}
+    password: ${LINGSHU_BILLING_POSTGRES_PASSWORD:${LINGSHU_POSTGRES_PASSWORD:}}
+    maximum-pool-size: ${LINGSHU_BILLING_POSTGRES_POOL_SIZE:4}
+  kafka:
+    enabled: ${LINGSHU_KAFKA_ENABLED:false}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

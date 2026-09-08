@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: lingshu-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: lingshu-core
+              uri: ${LINGSHU_CORE_URI:http://localhost:8081}
+              predicates:
+                - Path=/v1/**
+
+lingshu:
+  gateway:
+    api-key:
+      enabled: ${LINGSHU_GATEWAY_API_KEY_ENABLED:false}
+      value: ${LINGSHU_GATEWAY_API_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
