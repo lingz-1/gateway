@@ -1,5 +1,6 @@
 package com.lingshu.core.provider;
 
+import com.lingshu.common.dto.ChatMessage;
 import com.lingshu.common.dto.ProviderRequest;
 import com.lingshu.common.dto.ProviderResponse;
 import com.lingshu.core.config.LingShuProperties;
@@ -15,6 +16,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -52,9 +54,16 @@ class DeepSeekModelProviderTest {
     void sendsOpenAiCompatibleRequestAndParsesResponse() throws Exception {
         DeepSeekModelProvider provider = provider();
 
-        ProviderResponse response = provider.invoke(
-                new ProviderRequest("trace-1", "tenant-1", "deepseek-v4flash", "hello")
-        );
+        ProviderResponse response = provider.invoke(new ProviderRequest(
+                "trace-1",
+                "tenant-1",
+                "deepseek-v4flash",
+                List.of(
+                        new ChatMessage("system", "Answer concisely"),
+                        new ChatMessage("user", "hello")
+                ),
+                0.4
+        ));
 
         assertEquals("deepseek", response.provider());
         assertEquals("deepseek-v4flash", response.model());
@@ -64,8 +73,12 @@ class DeepSeekModelProviderTest {
         assertEquals("Bearer test-key", authorization.get());
         JsonNode request = objectMapper.readTree(requestBody.get());
         assertEquals("deepseek-v4-flash", request.path("model").asText());
-        assertEquals("hello", request.path("messages").get(0).path("content").asText());
-        assertEquals("user", request.path("messages").get(0).path("role").asText());
+        assertEquals(2, request.path("messages").size());
+        assertEquals("Answer concisely", request.path("messages").get(0).path("content").asText());
+        assertEquals("system", request.path("messages").get(0).path("role").asText());
+        assertEquals("hello", request.path("messages").get(1).path("content").asText());
+        assertEquals("user", request.path("messages").get(1).path("role").asText());
+        assertEquals(0.4, request.path("temperature").asDouble());
         assertTrue(!request.path("stream").asBoolean());
     }
 
@@ -78,7 +91,7 @@ class DeepSeekModelProviderTest {
         ProviderUsageException exception = assertThrows(
                 ProviderUsageException.class,
                 () -> provider().invoke(
-                        new ProviderRequest("trace-1", "tenant-1", "deepseek-v4flash", "hello")
+                        request("trace-1")
                 )
         );
 
@@ -94,7 +107,7 @@ class DeepSeekModelProviderTest {
         IllegalStateException exception = assertThrows(
                 IllegalStateException.class,
                 () -> provider().invoke(
-                        new ProviderRequest("trace-1", "tenant-1", "deepseek-v4flash", "hello")
+                        request("trace-1")
                 )
         );
 
@@ -123,7 +136,7 @@ class DeepSeekModelProviderTest {
         DeepSeekModelProvider provider = new DeepSeekModelProvider(properties, objectMapper, HttpClient.newHttpClient());
 
         ProviderResponse response = provider.invoke(
-                new ProviderRequest("trace-retry", "tenant-1", "deepseek-v4flash", "hello")
+                request("trace-retry")
         );
 
         assertEquals(2, requestCount.get());
@@ -139,15 +152,25 @@ class DeepSeekModelProviderTest {
         DeepSeekModelProvider provider = new DeepSeekModelProvider(properties, objectMapper, HttpClient.newHttpClient());
 
         assertThrows(ProviderUsageException.class, () -> provider.invoke(
-                new ProviderRequest("trace-circuit", "tenant-1", "deepseek-v4flash", "hello")));
+                request("trace-circuit")));
 
         assertEquals(ProviderHealth.Status.DOWN, provider.health().status());
         assertThrows(ProviderRoutingException.class, () -> provider.invoke(
-                new ProviderRequest("trace-circuit-2", "tenant-1", "deepseek-v4flash", "hello")));
+                request("trace-circuit-2")));
     }
 
     private DeepSeekModelProvider provider() {
         return new DeepSeekModelProvider(properties(), objectMapper, HttpClient.newHttpClient());
+    }
+
+    private ProviderRequest request(String traceId) {
+        return new ProviderRequest(
+                traceId,
+                "tenant-1",
+                "deepseek-v4flash",
+                List.of(new ChatMessage("user", "hello")),
+                0.7
+        );
     }
 
     private LingShuProperties properties() {

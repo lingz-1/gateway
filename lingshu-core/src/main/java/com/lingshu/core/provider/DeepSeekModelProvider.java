@@ -16,7 +16,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
@@ -93,11 +93,19 @@ public class DeepSeekModelProvider implements ModelProvider {
         int accumulatedInputTokens = 0;
         int accumulatedOutputTokens = 0;
         try {
-            String requestBody = objectMapper.writeValueAsString(Map.of(
-                    "model", wireModel(),
-                    "messages", List.of(Map.of("role", "user", "content", request.prompt())),
-                    "stream", false
-            ));
+            Map<String, Object> requestFields = new LinkedHashMap<>();
+            requestFields.put("model", wireModel());
+            requestFields.put("messages", request.messages().stream()
+                    .map(message -> Map.of(
+                            "role", message.role(),
+                            "content", message.content()
+                    ))
+                    .toList());
+            requestFields.put("stream", false);
+            if (request.temperature() != null) {
+                requestFields.put("temperature", request.temperature());
+            }
+            String requestBody = objectMapper.writeValueAsString(requestFields);
             for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                 HttpRequest httpRequest = HttpRequest.newBuilder(endpoint)
                         .timeout(timeout)

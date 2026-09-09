@@ -24,7 +24,8 @@ public class ProviderInvokeProcessor implements ChatProcessor {
                 context.traceId(),
                 context.tenantId(),
                 context.request().model(),
-                context.request().prompt()
+                context.request().messages(),
+                context.request().temperature()
         );
         context.providerResponse(context.provider().invoke(providerRequest));
     }
