@@ -12,3 +12,9 @@ application-local.yml
 semantic-threshold-report.txt
 Thumbs.db
 .DS_Store
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+test-results/

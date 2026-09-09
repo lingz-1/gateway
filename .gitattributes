@@ -10,3 +10,7 @@
 *.sql text eol=lf
 *.py text eol=lf
 *.ps1 text eol=crlf
+*.html text eol=lf
+*.css text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf

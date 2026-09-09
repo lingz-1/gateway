@@ -35,6 +35,16 @@ if ($Build) {
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
+    & (Join-Path $PSScriptRoot "npm.ps1") ci
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+    & (Join-Path $PSScriptRoot "npm.ps1") run build
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+} elseif (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "lingshu-web\node_modules"))) {
+    throw "Frontend dependencies are missing. Run .\scripts\start-local.ps1 -Build first."
 }
 
 function Test-Health([string]$Uri) {
@@ -54,6 +64,25 @@ function Wait-Health([string]$Name, [string]$Uri) {
         Start-Sleep -Seconds 1
     }
     throw "$Name did not become healthy. Check logs under $LogRoot."
+}
+
+function Test-Web([string]$Uri) {
+    try {
+        $response = Invoke-WebRequest -Uri $Uri -TimeoutSec 2 -UseBasicParsing
+        return $response.StatusCode -eq 200
+    } catch {
+        return $false
+    }
+}
+
+function Wait-Web([string]$Uri) {
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        if (Test-Web $Uri) {
+            return
+        }
+        Start-Sleep -Seconds 1
+    }
+    throw "Web did not become ready. Check logs under $LogRoot."
 }
 
 function Assert-PortAvailable([string]$Name, [int]$Port) {
@@ -114,10 +143,25 @@ if (-not (Test-Health $GatewayHealth)) {
     Wait-Health "Gateway" $GatewayHealth
 }
 
+$WebUri = "http://127.0.0.1:5173"
+if (-not (Test-Web $WebUri)) {
+    Assert-PortAvailable "Web" 5173
+    Start-Process -FilePath $PowerShellExecutable `
+        -ArgumentList @("-NoProfile", "-File", (Join-Path $PSScriptRoot "run-web.ps1")) `
+        -WorkingDirectory $ProjectRoot `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $LogRoot "web.out.log") `
+        -RedirectStandardError (Join-Path $LogRoot "web.err.log")
+    Wait-Web $WebUri
+}
+
 Write-Host "LingShu is ready."
+Write-Host "Web:        $WebUri"
 Write-Host "Gateway:    http://127.0.0.1:8080"
 Write-Host "Core:       http://127.0.0.1:8081"
-Write-Host "Prometheus: http://127.0.0.1:9090"
-Write-Host "Grafana:    http://127.0.0.1:3001"
+if ($FullInfrastructure -or $Provider -eq "DeepSeek") {
+    Write-Host "Prometheus: http://127.0.0.1:9090"
+    Write-Host "Grafana:    http://127.0.0.1:3001"
+}
 Write-Host "Provider:   $Provider"
 Write-Host "Infrastructure: $(if ($FullInfrastructure -or $Provider -eq 'DeepSeek') { 'full' } else { 'none (in-memory)' })"

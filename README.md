@@ -6,6 +6,8 @@ LingShu is an enterprise AI capability platform and intelligent gateway. It sepa
 - `lingshu-gateway`: Spring Cloud Gateway WebFlux application.
 - `lingshu-core`: Spring MVC policy engine and provider abstraction.
 
+The repository also includes `lingshu-web`, a React and TypeScript user console for chatting through the gateway and inspecting cache, token, billing, trace, and processor metadata.
+
 ## Development environment
 
 The required Conda environment is `lingshu-dev` at `D:\anaconda\envs\lingshu-dev`.
@@ -20,6 +22,7 @@ The helper script always uses the project Conda environment and stores Maven dep
 
 ## Local applications
 
+- Web console: `http://localhost:5173`
 - Gateway: `http://localhost:8080`
 - Core: `http://localhost:8081`
 
@@ -27,6 +30,25 @@ For the fastest local smoke test, build and start the in-memory Stub profile wit
 
 ```powershell
 .\scripts\start-local.ps1 -Build
+```
+
+Open `http://localhost:5173` after the command reports that LingShu is ready. The default profile starts the Web console, Gateway, and Core with deterministic local Stub providers. Stop all three applications with:
+
+```powershell
+.\scripts\stop-local.ps1
+```
+
+Run the frontend unit tests and production build with the environment-bound npm wrapper:
+
+```powershell
+.\scripts\npm.ps1 test
+.\scripts\npm.ps1 run build
+```
+
+With all three applications running, exercise the real browser flow in headless Microsoft Edge. The test sends streaming requests, verifies an exact-cache hit, checks the mobile drawers, and saves screenshots under the ignored `lingshu-web/test-results` directory:
+
+```powershell
+D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev python .\scripts\test-web-e2e.py
 ```
 
 To start the production-like local infrastructure and Qwen embedding profile, add `-FullInfrastructure`. This requires `.env`, Docker, and the model under `E:\LingShuData\models\Qwen3-Embedding-4B`:
@@ -41,6 +63,7 @@ Alternatively, build the applications and start each one in a separate PowerShel
 .\scripts\mvn.ps1 verify
 .\scripts\run-core.ps1
 .\scripts\run-gateway.ps1
+.\scripts\run-web.ps1
 ```
 
 Call the non-streaming OpenAI-compatible endpoint through Gateway:
@@ -165,4 +188,19 @@ Stop only the LingShu infrastructure with:
 
 ```powershell
 .\scripts\infra.ps1 down
+```
+
+## Web verification
+
+Run the frontend unit tests and production build through the project environment:
+
+```powershell
+.\scripts\npm.ps1 test
+.\scripts\npm.ps1 run build
+```
+
+With all three local applications running, execute the Edge/Playwright browser smoke test. It sends a streaming request, repeats it in a new conversation, verifies an exact-cache hit, and writes an ignored screenshot under `lingshu-web/test-results`:
+
+```powershell
+D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev python .\scripts\test-web-e2e.py
 ```
