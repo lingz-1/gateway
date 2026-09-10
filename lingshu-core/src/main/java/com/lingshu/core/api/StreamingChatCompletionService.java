@@ -61,7 +61,7 @@ public class StreamingChatCompletionService {
                     "choices", List.of(Map.of(
                             "index", 0,
                             "delta", Map.of(),
-                            "finish_reason", "stop"
+                            "finish_reason", response.choices().getFirst().finish_reason()
                     )),
                     "usage", response.usage(),
                     "metadata", response.metadata()

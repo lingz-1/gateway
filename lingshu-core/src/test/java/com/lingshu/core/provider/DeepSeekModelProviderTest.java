@@ -29,7 +29,7 @@ class DeepSeekModelProviderTest {
     private final JsonMapper objectMapper = JsonMapper.builder().build();
     private final AtomicInteger responseStatus = new AtomicInteger(200);
     private final AtomicReference<String> responseBody = new AtomicReference<>(
-            "{\"choices\":[{\"message\":{\"content\":\"hello from deepseek\"}}],"
+            "{\"choices\":[{\"message\":{\"content\":\"hello from deepseek\"},\"finish_reason\":\"length\"}],"
                     + "\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":4}}"
     );
     private final AtomicReference<String> requestBody = new AtomicReference<>();
@@ -72,6 +72,7 @@ class DeepSeekModelProviderTest {
         assertEquals("hello from deepseek", response.content());
         assertEquals(7, response.inputTokens());
         assertEquals(4, response.outputTokens());
+        assertEquals("length", response.finishReason());
         assertEquals("Bearer test-key", authorization.get());
         JsonNode request = objectMapper.readTree(requestBody.get());
         assertEquals("deepseek-v4-flash", request.path("model").asText());

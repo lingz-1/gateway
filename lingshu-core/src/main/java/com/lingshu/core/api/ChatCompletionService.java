@@ -104,7 +104,7 @@ public class ChatCompletionService {
         ChatCompletionResponse.Choice choice = new ChatCompletionResponse.Choice(
                 0,
                 new ChatMessage("assistant", providerResponse.content()),
-                "stop"
+                providerResponse.finishReason()
         );
         ChatCompletionResponse.Metadata metadata = new ChatCompletionResponse.Metadata(
                 traceId,

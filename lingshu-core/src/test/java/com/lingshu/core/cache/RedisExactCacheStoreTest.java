@@ -31,18 +31,36 @@ class RedisExactCacheStoreTest {
                 JsonMapper.builder().build(),
                 properties
         );
-        ProviderResponse response = new ProviderResponse("stub", "stub-echo-v1", "answer", 2, 1);
+        ProviderResponse response = new ProviderResponse("stub", "stub-echo-v1", "answer", 2, 1, "length");
 
         store.put("hash", response);
         verify(values).set(
                 RedisExactCacheStore.KEY_PREFIX + "hash",
-                "{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1}",
+                "{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1,\"finishReason\":\"length\"}",
                 Duration.ofMinutes(3)
         );
 
         when(values.get(RedisExactCacheStore.KEY_PREFIX + "hash"))
-                .thenReturn("{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1}");
+                .thenReturn("{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1,\"finishReason\":\"length\"}");
         assertEquals(response, store.get("hash").orElseThrow());
+    }
+
+    @Test
+    void defaultsLegacyEntriesWithoutFinishReasonToStop() {
+        StringRedisTemplate template = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> values = mock(ValueOperations.class);
+        when(template.opsForValue()).thenReturn(values);
+        when(values.get(RedisExactCacheStore.KEY_PREFIX + "legacy"))
+                .thenReturn("{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1}");
+
+        RedisExactCacheStore store = new RedisExactCacheStore(
+                template,
+                JsonMapper.builder().build(),
+                new LingShuProperties()
+        );
+
+        assertEquals("stop", store.get("legacy").orElseThrow().finishReason());
     }
 
     @Test

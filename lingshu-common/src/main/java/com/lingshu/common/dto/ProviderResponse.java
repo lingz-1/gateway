@@ -7,7 +7,8 @@ public record ProviderResponse(
         String model,
         String content,
         int inputTokens,
-        int outputTokens
+        int outputTokens,
+        String finishReason
 ) {
     public ProviderResponse {
         Objects.requireNonNull(provider, "provider must not be null");
@@ -16,5 +17,18 @@ public record ProviderResponse(
         if (inputTokens < 0 || outputTokens < 0) {
             throw new IllegalArgumentException("token counts must not be negative");
         }
+        if (finishReason == null || finishReason.isBlank()) {
+            finishReason = "stop";
+        }
+    }
+
+    public ProviderResponse(
+            String provider,
+            String model,
+            String content,
+            int inputTokens,
+            int outputTokens
+    ) {
+        this(provider, model, content, inputTokens, outputTokens, "stop");
     }
 }

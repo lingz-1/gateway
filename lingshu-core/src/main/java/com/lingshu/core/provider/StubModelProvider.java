@@ -44,7 +44,8 @@ public class StubModelProvider implements ModelProvider {
                 model,
                 content,
                 estimateTokens(request.prompt()),
-                estimateTokens(content)
+                estimateTokens(content),
+                "stop"
         );
     }
 

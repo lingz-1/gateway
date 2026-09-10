@@ -139,7 +139,8 @@ public class DeepSeekModelProvider implements ModelProvider {
                     int priorInput = accumulatedInputTokens - parsed.inputTokens();
                     int priorOutput = accumulatedOutputTokens - parsed.outputTokens();
                     return new ProviderResponse(parsed.provider(), parsed.model(), parsed.content(),
-                            parsed.inputTokens() + priorInput, parsed.outputTokens() + priorOutput);
+                            parsed.inputTokens() + priorInput, parsed.outputTokens() + priorOutput,
+                            parsed.finishReason());
                 }
                 if (isRetryable(response.statusCode()) && attempt < maxAttempts) {
                     pauseBeforeRetry(attempt);
@@ -183,13 +184,15 @@ public class DeepSeekModelProvider implements ModelProvider {
         if (!content.isTextual()) {
             throw new IllegalStateException("DeepSeek response does not contain text content");
         }
+        JsonNode finishReason = choices.get(0).path("finish_reason");
         int[] usageTokens = parseUsage(root);
         return new ProviderResponse(
                 PROVIDER_ID,
                 model,
                 content.asText(),
                 usageTokens[0],
-                usageTokens[1]
+                usageTokens[1],
+                finishReason.isTextual() ? finishReason.asText() : "stop"
         );
     }
 

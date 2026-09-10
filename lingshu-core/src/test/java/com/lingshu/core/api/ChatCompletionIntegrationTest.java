@@ -30,6 +30,7 @@ class ChatCompletionIntegrationTest {
         assertEquals(1, standard.headers().allValues("X-Trace-Id").size());
         assertEquals("stub", standard.headers().firstValue("X-LingShu-Provider").orElseThrow());
         assertTrue(standard.body().contains("\"provider\":\"stub\""));
+        assertTrue(standard.body().contains("\"finish_reason\":\"stop\""));
         assertTrue(standard.body().contains("\"name\":\"trace\""));
         assertTrue(standard.body().contains("\"name\":\"router\""));
         assertTrue(standard.body().contains("\"name\":\"provider-invoke\""));
