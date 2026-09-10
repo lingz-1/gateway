@@ -10,6 +10,7 @@ import com.lingshu.core.processing.ChatProcessorEngine;
 import com.lingshu.core.billing.VirtualBillingCharge;
 import com.lingshu.core.billing.VirtualBillingService;
 import com.lingshu.core.provider.ProviderUsageException;
+import com.lingshu.core.provider.ProviderRoutingException;
 import com.lingshu.core.observability.LingShuMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +54,9 @@ public class ChatCompletionService {
             if (exception instanceof ProviderUsageException usageException) {
                 inputTokens = usageException.inputTokens();
                 outputTokens = usageException.outputTokens();
+            } else if (exception instanceof ProviderRoutingException routingException) {
+                inputTokens = routingException.inputTokens();
+                outputTokens = routingException.outputTokens();
             }
             VirtualBillingCharge billing = virtualBillingService.recordFailure(
                     tenantId,
@@ -114,7 +118,8 @@ public class ChatCompletionService {
                 result.totalDurationMs(),
                 context.steps(),
                 billing.costCny(),
-                billing.remainingBalanceCny()
+                billing.remainingBalanceCny(),
+                context.providerAttempts()
         );
 
         return new ChatCompletionResponse(

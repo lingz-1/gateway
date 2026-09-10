@@ -43,6 +43,7 @@ export interface CompletionMetadata {
   processors: ProcessingStep[]
   virtualCostCny: number
   virtualRemainingBalanceCny: number
+  providerAttempts: string[]
 }
 
 export interface CompletionResponse {

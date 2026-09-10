@@ -41,10 +41,11 @@ public class ChatProcessorEngine {
 
         long totalDurationMs = elapsedMs(startedAt);
         LOGGER.info(
-                "Chat completion succeeded traceId={} tenantId={} provider={} model={} cacheStatus={} durationMs={} processors={}",
+                "Chat completion succeeded traceId={} tenantId={} provider={} providerAttempts={} model={} cacheStatus={} durationMs={} processors={}",
                 traceId,
                 tenantId,
                 context.providerResponse().provider(),
+                context.providerAttempts(),
                 request.model(),
                 context.cacheStatus(),
                 totalDurationMs,

@@ -19,6 +19,8 @@ public final class ChatProcessingContext {
     private final String tenantId;
     private final List<ProcessingStep> steps = new ArrayList<>();
     private ModelProvider provider;
+    private List<ModelProvider> providerCandidates = List.of();
+    private final List<String> providerAttempts = new ArrayList<>();
     private ProviderResponse providerResponse;
     private CacheStatus cacheStatus = CacheStatus.MISS;
     private String exactCacheKey;
@@ -55,6 +57,22 @@ public final class ChatProcessingContext {
 
     public void provider(ModelProvider provider) {
         this.provider = provider;
+    }
+
+    public List<ModelProvider> providerCandidates() {
+        return providerCandidates;
+    }
+
+    public void providerCandidates(List<ModelProvider> providerCandidates) {
+        this.providerCandidates = List.copyOf(providerCandidates);
+    }
+
+    public void addProviderAttempt(String providerId) {
+        providerAttempts.add(providerId);
+    }
+
+    public List<String> providerAttempts() {
+        return List.copyOf(providerAttempts);
     }
 
     public ProviderResponse providerResponse() {

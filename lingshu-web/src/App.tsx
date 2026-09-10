@@ -382,6 +382,7 @@ function App() {
 
           <dl className="request-facts">
             <div><dt>Provider</dt><dd>{metadata?.provider ?? models.find((item) => item.id === model)?.provider ?? '—'}</dd></div>
+            <div><dt>尝试链路</dt><dd>{metadata?.providerAttempts?.join(' → ') || '—'}</dd></div>
             <div><dt>Tenant</dt><dd>{metadata?.tenantId ?? tenantId}</dd></div>
             <div><dt>Input / Output</dt><dd>{usage ? `${usage.prompt_tokens} / ${usage.completion_tokens}` : '—'}</dd></div>
             <div><dt>剩余余额</dt><dd>{formatMoney(metadata?.virtualRemainingBalanceCny)}</dd></div>

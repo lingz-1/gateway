@@ -35,7 +35,8 @@ public record ChatCompletionResponse(
             long totalDurationMs,
             List<ProcessingStep> processors,
             BigDecimal virtualCostCny,
-            BigDecimal virtualRemainingBalanceCny
+            BigDecimal virtualRemainingBalanceCny,
+            List<String> providerAttempts
     ) {
     }
 }

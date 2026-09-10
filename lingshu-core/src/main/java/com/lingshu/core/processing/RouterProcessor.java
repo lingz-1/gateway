@@ -26,6 +26,8 @@ public class RouterProcessor implements ChatProcessor {
 
     @Override
     public void process(ChatProcessingContext context) {
-        context.provider(router.route(context.request().model()));
+        var candidates = router.routeCandidates(context.request().model());
+        context.providerCandidates(candidates);
+        context.provider(candidates.getFirst());
     }
 }

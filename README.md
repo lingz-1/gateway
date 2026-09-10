@@ -82,7 +82,9 @@ Invoke-RestMethod `
     -Body $body
 ```
 
-Use model `stub-fast-v1` to select the second deterministic provider. Responses include processor order, selected provider, trace ID, token estimates, and elapsed time.
+Use model `stub-fast-v1` to select the second deterministic provider. Responses include processor order, selected provider, provider attempt order, trace ID, token estimates, and elapsed time.
+
+Multiple providers may advertise the same logical model. The router ignores unhealthy candidates and orders the remaining candidates using recent latency, current in-flight load, and consecutive-failure penalties. If an invocation fails, Core automatically tries the next candidate. Failed-attempt token usage is retained for billing, and `metadata.providerAttempts` exposes the attempted provider order. For a local fallback exercise, configure `LINGSHU_STUB_MODEL` and `LINGSHU_FAST_STUB_MODEL` with the same value before starting Core.
 
 Exact caching is enabled by default with an in-memory development store. Cache keys use SHA-256 and isolate tenant, model, prompt version, sampling parameters, roles, and message content. The response header `X-LingShu-Cache` and metadata field `cacheStatus` report `MISS` or `EXACT`.
 

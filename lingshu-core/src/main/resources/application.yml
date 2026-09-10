@@ -64,10 +64,10 @@ lingshu:
   provider:
     stub:
       enabled: true
-      model: stub-echo-v1
+      model: ${LINGSHU_STUB_MODEL:stub-echo-v1}
     fast-stub:
       enabled: true
-      model: stub-fast-v1
+      model: ${LINGSHU_FAST_STUB_MODEL:stub-fast-v1}
     deepseek:
       enabled: ${LINGSHU_PROVIDER_DEEPSEEK_ENABLED:false}
       model: ${LINGSHU_DEEPSEEK_MODEL:deepseek-v4flash}
