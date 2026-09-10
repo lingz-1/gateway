@@ -82,6 +82,7 @@ lingshu:
       max-attempts: ${LINGSHU_DEEPSEEK_MAX_ATTEMPTS:1}
       retry-backoff: ${LINGSHU_DEEPSEEK_RETRY_BACKOFF:200ms}
       max-concurrent-requests: ${LINGSHU_DEEPSEEK_MAX_CONCURRENT_REQUESTS:8}
+      max-stream-response-chars: ${LINGSHU_DEEPSEEK_MAX_STREAM_RESPONSE_CHARS:1000000}
       circuit-failure-threshold: ${LINGSHU_DEEPSEEK_CIRCUIT_FAILURE_THRESHOLD:5}
       circuit-open-duration: ${LINGSHU_DEEPSEEK_CIRCUIT_OPEN_DURATION:30s}
     openai:
@@ -94,6 +95,7 @@ lingshu:
       max-attempts: ${LINGSHU_OPENAI_MAX_ATTEMPTS:1}
       retry-backoff: ${LINGSHU_OPENAI_RETRY_BACKOFF:200ms}
       max-concurrent-requests: ${LINGSHU_OPENAI_MAX_CONCURRENT_REQUESTS:8}
+      max-stream-response-chars: ${LINGSHU_OPENAI_MAX_STREAM_RESPONSE_CHARS:1000000}
       circuit-failure-threshold: ${LINGSHU_OPENAI_CIRCUIT_FAILURE_THRESHOLD:5}
       circuit-open-duration: ${LINGSHU_OPENAI_CIRCUIT_OPEN_DURATION:30s}
   billing:

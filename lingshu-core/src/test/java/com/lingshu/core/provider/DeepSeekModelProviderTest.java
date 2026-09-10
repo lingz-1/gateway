@@ -127,6 +127,44 @@ class DeepSeekModelProviderTest {
     }
 
     @Test
+    void estimatesStreamingUsageWhenProviderOmitsUsage() {
+        responseBody.set("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},"
+                + "\"finish_reason\":\"stop\"}]}\n\n"
+                + "data: [DONE]\n\n");
+
+        ProviderResponse response = provider().stream(request("trace-estimated-usage"), delta -> {
+        });
+
+        assertEquals("hello", response.content());
+        assertEquals(3, response.inputTokens());
+        assertEquals(2, response.outputTokens());
+    }
+
+    @Test
+    void rejectsStreamingContentBeforeEmittingBeyondConfiguredLimit() {
+        responseBody.set("data: {\"choices\":[{\"delta\":{\"content\":\"too long\"}}]}\n\n"
+                + "data: [DONE]\n\n");
+        LingShuProperties properties = properties();
+        properties.getProvider().getDeepseek().setMaxStreamResponseChars(4);
+        DeepSeekModelProvider provider = new DeepSeekModelProvider(
+                properties,
+                objectMapper,
+                HttpClient.newHttpClient()
+        );
+        List<String> deltas = new CopyOnWriteArrayList<>();
+
+        ProviderUsageException exception = assertThrows(
+                ProviderUsageException.class,
+                () -> provider.stream(request("trace-response-limit"), deltas::add)
+        );
+
+        assertTrue(exception.getMessage().contains("exceeded 4 characters"));
+        assertEquals(3, exception.inputTokens());
+        assertEquals(0, exception.outputTokens());
+        assertTrue(deltas.isEmpty());
+    }
+
+    @Test
     void stopsReadingProviderStreamWhenConsumerDisconnects() {
         responseBody.set("data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n\n"
                 + "data: {\"choices\":[{\"delta\":{\"content\":\"second\"}}]}\n\n"

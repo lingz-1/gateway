@@ -653,6 +653,7 @@ public class LingShuProperties {
         private int maxAttempts = 1;
         private java.time.Duration retryBackoff = java.time.Duration.ofMillis(200);
         private int maxConcurrentRequests = 8;
+        private int maxStreamResponseChars = 1_000_000;
         private int circuitFailureThreshold = 5;
         private java.time.Duration circuitOpenDuration = java.time.Duration.ofSeconds(30);
 
@@ -732,6 +733,14 @@ public class LingShuProperties {
 
         public void setMaxConcurrentRequests(int maxConcurrentRequests) {
             this.maxConcurrentRequests = maxConcurrentRequests;
+        }
+
+        public int getMaxStreamResponseChars() {
+            return maxStreamResponseChars;
+        }
+
+        public void setMaxStreamResponseChars(int maxStreamResponseChars) {
+            this.maxStreamResponseChars = maxStreamResponseChars;
         }
 
         public int getCircuitFailureThreshold() {

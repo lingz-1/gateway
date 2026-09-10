@@ -48,6 +48,7 @@ public class DeepSeekModelProvider implements ModelProvider {
     private final int maxAttempts;
     private final Duration retryBackoff;
     private final Semaphore concurrency;
+    private final int maxStreamResponseChars;
     private final int circuitFailureThreshold;
     private final Duration circuitOpenDuration;
     private final AtomicInteger consecutiveFailures = new AtomicInteger();
@@ -88,6 +89,7 @@ public class DeepSeekModelProvider implements ModelProvider {
         this.maxAttempts = provider.getMaxAttempts();
         this.retryBackoff = provider.getRetryBackoff();
         this.concurrency = new Semaphore(provider.getMaxConcurrentRequests());
+        this.maxStreamResponseChars = provider.getMaxStreamResponseChars();
         this.circuitFailureThreshold = provider.getCircuitFailureThreshold();
         this.circuitOpenDuration = provider.getCircuitOpenDuration();
         validateConfiguration();
@@ -223,6 +225,13 @@ public class DeepSeekModelProvider implements ModelProvider {
                     consumer.onOpen(() -> closeQuietly(responseBody));
                     try {
                         readStream(responseBody, consumer, stream);
+                    } catch (ResponseLimitExceededException exception) {
+                        registerFailure();
+                        throw new ProviderUsageException(
+                                exception.getMessage(),
+                                accumulatedInputTokens + estimateTokens(request.prompt()),
+                                accumulatedOutputTokens + estimateTokens(stream.content.toString())
+                        );
                     } catch (IOException exception) {
                         if (consumer.isCancelled()) {
                             throw new ProviderStreamCancelledException(
@@ -243,12 +252,19 @@ public class DeepSeekModelProvider implements ModelProvider {
                         );
                     }
                     registerSuccess();
+                    String content = stream.content.toString();
+                    int inputTokens = stream.usageReported
+                            ? stream.inputTokens
+                            : estimateTokens(request.prompt());
+                    int outputTokens = stream.usageReported
+                            ? stream.outputTokens
+                            : estimateTokens(content);
                     return new ProviderResponse(
                             providerId,
                             model,
-                            stream.content.toString(),
-                            stream.inputTokens + accumulatedInputTokens,
-                            stream.outputTokens + accumulatedOutputTokens,
+                            content,
+                            inputTokens + accumulatedInputTokens,
+                            outputTokens + accumulatedOutputTokens,
                             stream.finishReason
                     );
                 }
@@ -355,6 +371,12 @@ public class DeepSeekModelProvider implements ModelProvider {
                     JsonNode content = choice.path("delta").path("content");
                     if (content.isTextual() && !content.asText().isEmpty()) {
                         String delta = content.asText();
+                        if ((long) stream.content.length() + delta.length() > maxStreamResponseChars) {
+                            throw new ResponseLimitExceededException(
+                                    providerId + " streamed response exceeded "
+                                            + maxStreamResponseChars + " characters"
+                            );
+                        }
                         try {
                             consumer.onDelta(delta);
                         } catch (IOException exception) {
@@ -371,10 +393,12 @@ public class DeepSeekModelProvider implements ModelProvider {
                         stream.finishReason = finishReason.asText();
                     }
                 }
-                int[] usage = parseUsage(root);
-                if (usage[0] > 0 || usage[1] > 0) {
+                JsonNode usageNode = root.path("usage");
+                if (usageNode.isObject()) {
+                    int[] usage = parseUsage(root);
                     stream.inputTokens = usage[0];
                     stream.outputTokens = usage[1];
+                    stream.usageReported = true;
                 }
             }
         }
@@ -421,7 +445,8 @@ public class DeepSeekModelProvider implements ModelProvider {
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalArgumentException(providerId + " timeout must be positive");
         }
-        if (maxAttempts < 1 || concurrency.availablePermits() < 1 || circuitFailureThreshold < 1) {
+        if (maxAttempts < 1 || concurrency.availablePermits() < 1
+                || maxStreamResponseChars < 1 || circuitFailureThreshold < 1) {
             throw new IllegalArgumentException(providerId + " reliability limits must be positive");
         }
         if (retryBackoff.isNegative() || circuitOpenDuration.isNegative() || circuitOpenDuration.isZero()) {
@@ -476,13 +501,28 @@ public class DeepSeekModelProvider implements ModelProvider {
         }
     }
 
+    private static int estimateTokens(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        return Math.max(1, (text.codePointCount(0, text.length()) + 3) / 4);
+    }
+
     private static final class StreamAccumulator {
 
         private final StringBuilder content = new StringBuilder();
         private boolean emitted;
+        private boolean usageReported;
         private int inputTokens;
         private int outputTokens;
         private String finishReason = "stop";
+    }
+
+    private static final class ResponseLimitExceededException extends IllegalStateException {
+
+        private ResponseLimitExceededException(String message) {
+            super(message);
+        }
     }
 
 }
