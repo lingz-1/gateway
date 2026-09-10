@@ -127,7 +127,9 @@ To use the DeepSeek chat provider configured in `.env` together with the local Q
 .\scripts\run-core-deepseek.ps1
 ```
 
-This enables the configured model name `deepseek-v4flash` (automatically sent to the DeepSeek API as the supported `deepseek-v4-flash` name), Redis exact caching, and PostgreSQL semantic caching. The script reads `DEEPSEEK_API_KEY` and `DEEPSEEK_BASE_URL` from `.env`; the key is never stored in source code.
+This enables the logical model name `deepseek-v4flash` while sending the configured upstream model `deepseek-v4-flash` to DeepSeek, plus Redis exact caching and PostgreSQL semantic caching. The script reads `DEEPSEEK_API_KEY` and `DEEPSEEK_BASE_URL` from `.env`; the key is never stored in source code.
+
+Core also includes a disabled-by-default OpenAI Chat Completions provider using the same non-streaming and SSE reliability path. Configure `OPENAI_API_KEY`, optionally set `OPENAI_BASE_URL`, `LINGSHU_OPENAI_MODEL`, and `LINGSHU_OPENAI_UPSTREAM_MODEL`, then enable it with `LINGSHU_PROVIDER_OPENAI_ENABLED=true`. `LINGSHU_*_MODEL` is the gateway's logical routing name; `LINGSHU_*_UPSTREAM_MODEL` is sent to the provider API. Giving OpenAI and DeepSeek the same logical model name while retaining their distinct upstream model names enables health/latency/load-aware selection and fallback between both real providers. OpenAI recommends the Responses API for new projects, but Chat Completions remains available here because LingShu exposes an OpenAI-compatible Chat Completions gateway contract.
 
 ### Virtual billing (development)
 

@@ -529,6 +529,7 @@ public class LingShuProperties {
         private final Stub stub = new Stub();
         private final FastStub fastStub = new FastStub();
         private final DeepSeek deepseek = new DeepSeek();
+        private final OpenAi openai = new OpenAi();
 
         public Stub getStub() {
             return stub;
@@ -540,6 +541,10 @@ public class LingShuProperties {
 
         public DeepSeek getDeepseek() {
             return deepseek;
+        }
+
+        public OpenAi getOpenai() {
+            return openai;
         }
     }
 
@@ -587,11 +592,26 @@ public class LingShuProperties {
         }
     }
 
-    public static class DeepSeek {
+    public static class DeepSeek extends HttpChatProvider {
+
+        public DeepSeek() {
+            super("deepseek-v4flash", "deepseek-v4-flash", "https://api.deepseek.com");
+        }
+    }
+
+    public static class OpenAi extends HttpChatProvider {
+
+        public OpenAi() {
+            super("gpt-4.1-mini", "gpt-4.1-mini", "https://api.openai.com/v1");
+        }
+    }
+
+    public static class HttpChatProvider {
 
         private boolean enabled;
-        private String model = "deepseek-v4flash";
-        private String baseUrl = "https://api.deepseek.com";
+        private String model;
+        private String upstreamModel;
+        private String baseUrl;
         private String apiKey = "";
         private java.time.Duration timeout = java.time.Duration.ofSeconds(60);
         private int maxAttempts = 1;
@@ -599,6 +619,12 @@ public class LingShuProperties {
         private int maxConcurrentRequests = 8;
         private int circuitFailureThreshold = 5;
         private java.time.Duration circuitOpenDuration = java.time.Duration.ofSeconds(30);
+
+        protected HttpChatProvider(String model, String upstreamModel, String baseUrl) {
+            this.model = model;
+            this.upstreamModel = upstreamModel;
+            this.baseUrl = baseUrl;
+        }
 
         public boolean isEnabled() {
             return enabled;
@@ -614,6 +640,14 @@ public class LingShuProperties {
 
         public void setModel(String model) {
             this.model = model;
+        }
+
+        public String getUpstreamModel() {
+            return upstreamModel;
+        }
+
+        public void setUpstreamModel(String upstreamModel) {
+            this.upstreamModel = upstreamModel;
         }
 
         public String getBaseUrl() {

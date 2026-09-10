@@ -39,8 +39,10 @@ public class DeepSeekModelProvider implements ModelProvider {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final String providerId;
     private final URI endpoint;
     private final String model;
+    private final String wireModel;
     private final String apiKey;
     private final Duration timeout;
     private final int maxAttempts;
@@ -53,7 +55,7 @@ public class DeepSeekModelProvider implements ModelProvider {
 
     @Autowired
     public DeepSeekModelProvider(LingShuProperties properties, ObjectMapper objectMapper) {
-        this(properties, objectMapper, buildHttpClient(properties));
+        this(properties, objectMapper, buildHttpClient(properties.getProvider().getDeepseek()));
     }
 
     DeepSeekModelProvider(
@@ -61,24 +63,39 @@ public class DeepSeekModelProvider implements ModelProvider {
             ObjectMapper objectMapper,
             HttpClient httpClient
     ) {
-        LingShuProperties.DeepSeek deepseek = properties.getProvider().getDeepseek();
+        this(
+                properties.getProvider().getDeepseek(),
+                objectMapper,
+                httpClient,
+                PROVIDER_ID
+        );
+    }
+
+    DeepSeekModelProvider(
+            LingShuProperties.HttpChatProvider provider,
+            ObjectMapper objectMapper,
+            HttpClient httpClient,
+            String providerId
+    ) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
-        this.endpoint = chatCompletionsEndpoint(deepseek.getBaseUrl());
-        this.model = deepseek.getModel();
-        this.apiKey = deepseek.getApiKey();
-        this.timeout = deepseek.getTimeout();
-        this.maxAttempts = deepseek.getMaxAttempts();
-        this.retryBackoff = deepseek.getRetryBackoff();
-        this.concurrency = new Semaphore(deepseek.getMaxConcurrentRequests());
-        this.circuitFailureThreshold = deepseek.getCircuitFailureThreshold();
-        this.circuitOpenDuration = deepseek.getCircuitOpenDuration();
+        this.providerId = providerId;
+        this.endpoint = chatCompletionsEndpoint(provider.getBaseUrl());
+        this.model = provider.getModel();
+        this.wireModel = provider.getUpstreamModel();
+        this.apiKey = provider.getApiKey();
+        this.timeout = provider.getTimeout();
+        this.maxAttempts = provider.getMaxAttempts();
+        this.retryBackoff = provider.getRetryBackoff();
+        this.concurrency = new Semaphore(provider.getMaxConcurrentRequests());
+        this.circuitFailureThreshold = provider.getCircuitFailureThreshold();
+        this.circuitOpenDuration = provider.getCircuitOpenDuration();
         validateConfiguration();
     }
 
     @Override
     public String id() {
-        return PROVIDER_ID;
+        return providerId;
     }
 
     @Override
@@ -89,10 +106,10 @@ public class DeepSeekModelProvider implements ModelProvider {
     @Override
     public ProviderResponse invoke(ProviderRequest request) {
         if (isCircuitOpen()) {
-            throw new ProviderRoutingException("DeepSeek circuit breaker is open");
+            throw new ProviderRoutingException(providerId + " circuit breaker is open");
         }
         if (!concurrency.tryAcquire()) {
-            throw new ProviderRoutingException("DeepSeek concurrency limit exceeded");
+            throw new ProviderRoutingException(providerId + " concurrency limit exceeded");
         }
         int accumulatedInputTokens = 0;
         int accumulatedOutputTokens = 0;
@@ -114,7 +131,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                         pauseBeforeRetry(attempt);
                         continue;
                     }
-                    throw new IllegalStateException("DeepSeek request failed", exception);
+                    throw new IllegalStateException(providerId + " request failed", exception);
                 }
                 int[] usage = parseUsage(response.body());
                 accumulatedInputTokens += usage[0];
@@ -133,14 +150,14 @@ public class DeepSeekModelProvider implements ModelProvider {
                     continue;
                 }
                 registerFailure();
-                throw new ProviderUsageException("DeepSeek provider returned HTTP " + response.statusCode(),
+                throw new ProviderUsageException(providerId + " provider returned HTTP " + response.statusCode(),
                         accumulatedInputTokens, accumulatedOutputTokens);
             }
-            throw new IllegalStateException("DeepSeek request attempts exhausted");
+            throw new IllegalStateException(providerId + " request attempts exhausted");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             registerFailure();
-            throw new IllegalStateException("DeepSeek request was interrupted", exception);
+            throw new IllegalStateException(providerId + " request was interrupted", exception);
         } catch (ProviderUsageException | ProviderRoutingException exception) {
             throw exception;
         } catch (IllegalStateException exception) {
@@ -148,7 +165,7 @@ public class DeepSeekModelProvider implements ModelProvider {
             throw exception;
         } catch (Exception exception) {
             registerFailure();
-            throw new IllegalStateException("DeepSeek request failed", exception);
+            throw new IllegalStateException(providerId + " request failed", exception);
         } finally {
             concurrency.release();
         }
@@ -157,10 +174,10 @@ public class DeepSeekModelProvider implements ModelProvider {
     @Override
     public ProviderResponse stream(ProviderRequest request, ProviderStreamConsumer consumer) {
         if (isCircuitOpen()) {
-            throw new ProviderRoutingException("DeepSeek circuit breaker is open");
+            throw new ProviderRoutingException(providerId + " circuit breaker is open");
         }
         if (!concurrency.tryAcquire()) {
-            throw new ProviderRoutingException("DeepSeek concurrency limit exceeded");
+            throw new ProviderRoutingException(providerId + " concurrency limit exceeded");
         }
         int accumulatedInputTokens = 0;
         int accumulatedOutputTokens = 0;
@@ -182,7 +199,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                         pauseBeforeRetry(attempt);
                         continue;
                     }
-                    throw new IllegalStateException("DeepSeek streaming request failed", exception);
+                    throw new IllegalStateException(providerId + " streaming request failed", exception);
                 }
                 try (InputStream responseBody = response.body()) {
                     if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -196,7 +213,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                         }
                         registerFailure();
                         throw new ProviderUsageException(
-                                "DeepSeek provider returned HTTP " + response.statusCode(),
+                                providerId + " provider returned HTTP " + response.statusCode(),
                                 accumulatedInputTokens,
                                 accumulatedOutputTokens
                         );
@@ -217,7 +234,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                             pauseBeforeRetry(attempt);
                             continue;
                         }
-                        throw new IllegalStateException("DeepSeek response stream failed", exception);
+                        throw new IllegalStateException(providerId + " response stream failed", exception);
                     }
                     if (consumer.isCancelled()) {
                         throw new ProviderStreamCancelledException(
@@ -227,7 +244,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                     }
                     registerSuccess();
                     return new ProviderResponse(
-                            PROVIDER_ID,
+                            providerId,
                             model,
                             stream.content.toString(),
                             stream.inputTokens + accumulatedInputTokens,
@@ -236,11 +253,11 @@ public class DeepSeekModelProvider implements ModelProvider {
                     );
                 }
             }
-            throw new IllegalStateException("DeepSeek streaming request attempts exhausted");
+            throw new IllegalStateException(providerId + " streaming request attempts exhausted");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             registerFailure();
-            throw new IllegalStateException("DeepSeek streaming request was interrupted", exception);
+            throw new IllegalStateException(providerId + " streaming request was interrupted", exception);
         } catch (ProviderStreamCancelledException exception) {
             throw exception;
         } catch (ProviderUsageException | ProviderRoutingException exception) {
@@ -250,7 +267,7 @@ public class DeepSeekModelProvider implements ModelProvider {
             throw exception;
         } catch (Exception exception) {
             registerFailure();
-            throw new IllegalStateException("DeepSeek streaming request failed", exception);
+            throw new IllegalStateException(providerId + " streaming request failed", exception);
         } finally {
             concurrency.release();
         }
@@ -259,23 +276,23 @@ public class DeepSeekModelProvider implements ModelProvider {
     @Override
     public ProviderHealth health() {
         ProviderHealth.Status status = isCircuitOpen() ? ProviderHealth.Status.DOWN : ProviderHealth.Status.UP;
-        return new ProviderHealth(PROVIDER_ID, status, Instant.now());
+        return new ProviderHealth(providerId, status, Instant.now());
     }
 
     private ProviderResponse parseResponse(String responseBody) throws Exception {
         JsonNode root = objectMapper.readTree(responseBody);
         JsonNode choices = root.path("choices");
         if (!choices.isArray() || choices.isEmpty()) {
-            throw new IllegalStateException("DeepSeek response does not contain choices");
+            throw new IllegalStateException(providerId + " response does not contain choices");
         }
         JsonNode content = choices.get(0).path("message").path("content");
         if (!content.isTextual()) {
-            throw new IllegalStateException("DeepSeek response does not contain text content");
+            throw new IllegalStateException(providerId + " response does not contain text content");
         }
         JsonNode finishReason = choices.get(0).path("finish_reason");
         int[] usageTokens = parseUsage(root);
         return new ProviderResponse(
-                PROVIDER_ID,
+                providerId,
                 model,
                 content.asText(),
                 usageTokens[0],
@@ -286,7 +303,7 @@ public class DeepSeekModelProvider implements ModelProvider {
 
     private Map<String, Object> requestFields(ProviderRequest request, boolean stream) {
         Map<String, Object> requestFields = new LinkedHashMap<>();
-        requestFields.put("model", wireModel());
+        requestFields.put("model", wireModel);
         requestFields.put("messages", request.messages().stream()
                 .map(message -> Map.of(
                         "role", message.role(),
@@ -330,7 +347,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                 }
                 JsonNode root = objectMapper.readTree(data);
                 if (!root.path("error").isMissingNode()) {
-                    throw new IllegalStateException("DeepSeek stream returned an error event");
+                    throw new IllegalStateException(providerId + " stream returned an error event");
                 }
                 JsonNode choices = root.path("choices");
                 if (choices.isArray() && !choices.isEmpty()) {
@@ -390,28 +407,31 @@ public class DeepSeekModelProvider implements ModelProvider {
     private void validateConfiguration() {
         if (!"http".equalsIgnoreCase(endpoint.getScheme())
                 && !"https".equalsIgnoreCase(endpoint.getScheme())) {
-            throw new IllegalArgumentException("DeepSeek base URL must use HTTP or HTTPS");
+            throw new IllegalArgumentException(providerId + " base URL must use HTTP or HTTPS");
         }
         if (model == null || model.isBlank()) {
-            throw new IllegalArgumentException("DeepSeek model must be configured");
+            throw new IllegalArgumentException(providerId + " model must be configured");
+        }
+        if (wireModel == null || wireModel.isBlank()) {
+            throw new IllegalArgumentException(providerId + " upstream model must be configured");
         }
         if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalArgumentException("DEEPSEEK_API_KEY must be configured");
+            throw new IllegalArgumentException(providerId + " API key must be configured");
         }
         if (timeout.isZero() || timeout.isNegative()) {
-            throw new IllegalArgumentException("DeepSeek timeout must be positive");
+            throw new IllegalArgumentException(providerId + " timeout must be positive");
         }
         if (maxAttempts < 1 || concurrency.availablePermits() < 1 || circuitFailureThreshold < 1) {
-            throw new IllegalArgumentException("DeepSeek reliability limits must be positive");
+            throw new IllegalArgumentException(providerId + " reliability limits must be positive");
         }
         if (retryBackoff.isNegative() || circuitOpenDuration.isNegative() || circuitOpenDuration.isZero()) {
-            throw new IllegalArgumentException("DeepSeek retry and circuit durations are invalid");
+            throw new IllegalArgumentException(providerId + " retry and circuit durations are invalid");
         }
     }
 
     private static URI chatCompletionsEndpoint(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
-            throw new IllegalArgumentException("DeepSeek base URL must be configured");
+            throw new IllegalArgumentException("Provider base URL must be configured");
         }
         String normalized = baseUrl.strip();
         while (normalized.endsWith("/")) {
@@ -423,17 +443,10 @@ public class DeepSeekModelProvider implements ModelProvider {
         return URI.create(normalized + "/chat/completions");
     }
 
-    private static HttpClient buildHttpClient(LingShuProperties properties) {
+    static HttpClient buildHttpClient(LingShuProperties.HttpChatProvider provider) {
         return HttpClient.newBuilder()
-                .connectTimeout(properties.getProvider().getDeepseek().getTimeout())
+                .connectTimeout(provider.getTimeout())
                 .build();
-    }
-
-    private String wireModel() {
-        if ("deepseek-v4flash".equals(model)) {
-            return "deepseek-v4-flash";
-        }
-        return model;
     }
 
     private boolean isRetryable(int statusCode) {

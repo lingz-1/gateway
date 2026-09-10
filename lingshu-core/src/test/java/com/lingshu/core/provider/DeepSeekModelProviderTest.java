@@ -151,7 +151,7 @@ class DeepSeekModelProviderTest {
                 )
         );
 
-        assertEquals("DeepSeek provider returned HTTP 401", exception.getMessage());
+        assertEquals("deepseek provider returned HTTP 401", exception.getMessage());
         assertEquals(12, exception.inputTokens());
         assertEquals(3, exception.outputTokens());
     }
@@ -180,7 +180,7 @@ class DeepSeekModelProviderTest {
                 () -> new DeepSeekModelProvider(properties, objectMapper, HttpClient.newHttpClient())
         );
 
-        assertTrue(exception.getMessage().contains("DEEPSEEK_API_KEY"));
+        assertTrue(exception.getMessage().contains("API key"));
     }
 
     @Test

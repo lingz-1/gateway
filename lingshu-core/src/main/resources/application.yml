@@ -71,6 +71,7 @@ lingshu:
     deepseek:
       enabled: ${LINGSHU_PROVIDER_DEEPSEEK_ENABLED:false}
       model: ${LINGSHU_DEEPSEEK_MODEL:deepseek-v4flash}
+      upstream-model: ${LINGSHU_DEEPSEEK_UPSTREAM_MODEL:deepseek-v4-flash}
       base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
       api-key: ${DEEPSEEK_API_KEY:}
       timeout: ${LINGSHU_DEEPSEEK_TIMEOUT:60s}
@@ -79,6 +80,18 @@ lingshu:
       max-concurrent-requests: ${LINGSHU_DEEPSEEK_MAX_CONCURRENT_REQUESTS:8}
       circuit-failure-threshold: ${LINGSHU_DEEPSEEK_CIRCUIT_FAILURE_THRESHOLD:5}
       circuit-open-duration: ${LINGSHU_DEEPSEEK_CIRCUIT_OPEN_DURATION:30s}
+    openai:
+      enabled: ${LINGSHU_PROVIDER_OPENAI_ENABLED:false}
+      model: ${LINGSHU_OPENAI_MODEL:gpt-4.1-mini}
+      upstream-model: ${LINGSHU_OPENAI_UPSTREAM_MODEL:gpt-4.1-mini}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_API_KEY:}
+      timeout: ${LINGSHU_OPENAI_TIMEOUT:60s}
+      max-attempts: ${LINGSHU_OPENAI_MAX_ATTEMPTS:1}
+      retry-backoff: ${LINGSHU_OPENAI_RETRY_BACKOFF:200ms}
+      max-concurrent-requests: ${LINGSHU_OPENAI_MAX_CONCURRENT_REQUESTS:8}
+      circuit-failure-threshold: ${LINGSHU_OPENAI_CIRCUIT_FAILURE_THRESHOLD:5}
+      circuit-open-duration: ${LINGSHU_OPENAI_CIRCUIT_OPEN_DURATION:30s}
   billing:
     enabled: ${LINGSHU_BILLING_ENABLED:false}
     virtual:
