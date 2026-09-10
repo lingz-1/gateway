@@ -99,6 +99,25 @@ class ChatCompletionIntegrationTest {
     }
 
     @Test
+    void rejectsInvalidSamplingParameters() throws Exception {
+        HttpResponse<String> maxTokensResponse = postRaw(
+                "{\"model\":\"stub-echo-v1\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],"
+                        + "\"max_tokens\":0}",
+                "trace-invalid-max-tokens"
+        );
+        HttpResponse<String> topPResponse = postRaw(
+                "{\"model\":\"stub-echo-v1\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],"
+                        + "\"top_p\":1.1}",
+                "trace-invalid-top-p"
+        );
+
+        assertEquals(400, maxTokensResponse.statusCode());
+        assertTrue(maxTokensResponse.body().contains("INVALID_REQUEST"));
+        assertEquals(400, topPResponse.statusCode());
+        assertTrue(topPResponse.body().contains("INVALID_REQUEST"));
+    }
+
+    @Test
     void returnsProviderErrorForUnknownModel() throws Exception {
         HttpResponse<String> response = post("unknown-model", "trace-unknown");
 
@@ -176,6 +195,16 @@ class ChatCompletionIntegrationTest {
                 .header("Content-Type", "application/json")
                 .header("X-Trace-Id", traceId)
                 .header("X-Tenant-Id", tenantId)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postRaw(String body, String traceId) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(endpoint())
+                .header("Content-Type", "application/json")
+                .header("X-Trace-Id", traceId)
+                .header("X-Tenant-Id", "tenant-test")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());

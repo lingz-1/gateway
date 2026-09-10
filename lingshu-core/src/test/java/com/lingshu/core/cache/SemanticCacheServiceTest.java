@@ -129,7 +129,9 @@ class SemanticCacheServiceTest {
                 "stub-echo-v1",
                 List.of(new ChatMessage("user", content)),
                 false,
-                0.2
+                0.2,
+                null,
+                null
         );
     }
 }

@@ -22,7 +22,9 @@ class ProviderRequestTest {
                 "tenant-1",
                 "logical-model",
                 messages,
-                0.5
+                0.5,
+                512,
+                0.9
         );
         messages.clear();
 
@@ -39,7 +41,21 @@ class ProviderRequestTest {
                 "tenant-1",
                 "logical-model",
                 List.of(new ChatMessage("user", "Hello")),
-                2.1
+                2.1,
+                null,
+                null
+        ));
+    }
+
+    @Test
+    void rejectsInvalidSamplingParameters() {
+        List<ChatMessage> messages = List.of(new ChatMessage("user", "Hello"));
+
+        assertThrows(IllegalArgumentException.class, () -> new ProviderRequest(
+                "trace-1", "tenant-1", "logical-model", messages, null, 0, null
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new ProviderRequest(
+                "trace-1", "tenant-1", "logical-model", messages, null, null, 1.1
         ));
     }
 }

@@ -25,16 +25,30 @@ class ExactCacheKeyFactoryTest {
         assertNotEquals(key, factory.create("tenant-b", request));
         assertNotEquals(key, factory.create("tenant-a", request("stub-fast-v1", 0.5, "hello")));
         assertNotEquals(key, factory.create("tenant-a", request("stub-echo-v1", 0.7, "hello")));
+        assertNotEquals(key, factory.create("tenant-a", request("stub-echo-v1", 0.5, 256, null, "hello")));
+        assertNotEquals(key, factory.create("tenant-a", request("stub-echo-v1", 0.5, null, 0.9, "hello")));
         assertNotEquals(key, factory.create("tenant-a", request("stub-echo-v1", 0.5, "hello ")));
         assertTrue(key.matches("[0-9a-f]{64}"));
     }
 
     private ChatCompletionRequest request(String model, Double temperature, String content) {
+        return request(model, temperature, null, null, content);
+    }
+
+    private ChatCompletionRequest request(
+            String model,
+            Double temperature,
+            Integer maxTokens,
+            Double topP,
+            String content
+    ) {
         return new ChatCompletionRequest(
                 model,
                 List.of(new ChatMessage("user", content)),
                 false,
-                temperature
+                temperature,
+                maxTokens,
+                topP
         );
     }
 }

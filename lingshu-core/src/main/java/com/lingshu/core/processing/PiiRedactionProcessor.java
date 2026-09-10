@@ -32,7 +32,14 @@ public class PiiRedactionProcessor implements ChatProcessor {
         List<ChatMessage> redacted = request.messages().stream()
                 .map(message -> new ChatMessage(message.role(), redact(message.content())))
                 .toList();
-        context.request(new ChatCompletionRequest(request.model(), redacted, request.stream(), request.temperature()));
+        context.request(new ChatCompletionRequest(
+                request.model(),
+                redacted,
+                request.stream(),
+                request.temperature(),
+                request.max_tokens(),
+                request.top_p()
+        ));
     }
 
     String redact(String value) {

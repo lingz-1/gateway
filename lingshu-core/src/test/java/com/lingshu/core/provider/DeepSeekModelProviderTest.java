@@ -62,7 +62,9 @@ class DeepSeekModelProviderTest {
                         new ChatMessage("system", "Answer concisely"),
                         new ChatMessage("user", "hello")
                 ),
-                0.4
+                0.4,
+                512,
+                0.9
         ));
 
         assertEquals("deepseek", response.provider());
@@ -79,6 +81,8 @@ class DeepSeekModelProviderTest {
         assertEquals("hello", request.path("messages").get(1).path("content").asText());
         assertEquals("user", request.path("messages").get(1).path("role").asText());
         assertEquals(0.4, request.path("temperature").asDouble());
+        assertEquals(512, request.path("max_tokens").asInt());
+        assertEquals(0.9, request.path("top_p").asDouble());
         assertTrue(!request.path("stream").asBoolean());
     }
 
@@ -169,7 +173,9 @@ class DeepSeekModelProviderTest {
                 "tenant-1",
                 "deepseek-v4flash",
                 List.of(new ChatMessage("user", "hello")),
-                0.7
+                0.7,
+                null,
+                null
         );
     }
 

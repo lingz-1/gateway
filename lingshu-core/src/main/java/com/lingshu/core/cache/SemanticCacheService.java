@@ -135,6 +135,8 @@ public class SemanticCacheService {
                 + "\u0000" + request.model()
                 + "\u0000" + Boolean.TRUE.equals(request.stream())
                 + "\u0000" + (request.temperature() == null ? "default" : request.temperature())
+                + "\u0000" + (request.max_tokens() == null ? "default" : request.max_tokens())
+                + "\u0000" + (request.top_p() == null ? "default" : request.top_p())
                 + "\u0000" + embeddingProvider
                 + "\u0000" + embeddingModel
                 + "\u0000" + embeddingDimension;

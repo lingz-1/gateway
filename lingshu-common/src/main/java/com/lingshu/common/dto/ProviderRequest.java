@@ -9,7 +9,9 @@ public record ProviderRequest(
         String tenantId,
         String requestedModel,
         List<ChatMessage> messages,
-        Double temperature
+        Double temperature,
+        Integer maxTokens,
+        Double topP
 ) {
     public ProviderRequest {
         Objects.requireNonNull(traceId, "traceId must not be null");
@@ -22,6 +24,12 @@ public record ProviderRequest(
         messages = List.copyOf(messages);
         if (temperature != null && (temperature < 0.0 || temperature > 2.0)) {
             throw new IllegalArgumentException("temperature must be between 0 and 2");
+        }
+        if (maxTokens != null && maxTokens < 1) {
+            throw new IllegalArgumentException("maxTokens must be positive");
+        }
+        if (topP != null && (topP < 0.0 || topP > 1.0)) {
+            throw new IllegalArgumentException("topP must be between 0 and 1");
         }
     }
 

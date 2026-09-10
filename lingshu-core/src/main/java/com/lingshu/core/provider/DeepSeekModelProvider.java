@@ -105,6 +105,12 @@ public class DeepSeekModelProvider implements ModelProvider {
             if (request.temperature() != null) {
                 requestFields.put("temperature", request.temperature());
             }
+            if (request.maxTokens() != null) {
+                requestFields.put("max_tokens", request.maxTokens());
+            }
+            if (request.topP() != null) {
+                requestFields.put("top_p", request.topP());
+            }
             String requestBody = objectMapper.writeValueAsString(requestFields);
             for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                 HttpRequest httpRequest = HttpRequest.newBuilder(endpoint)

@@ -25,6 +25,8 @@ public class ExactCacheKeyFactory {
         append(canonical, promptVersion);
         append(canonical, Boolean.toString(Boolean.TRUE.equals(request.stream())));
         append(canonical, request.temperature() == null ? "default" : request.temperature().toString());
+        append(canonical, request.max_tokens() == null ? "default" : request.max_tokens().toString());
+        append(canonical, request.top_p() == null ? "default" : request.top_p().toString());
         for (ChatMessage message : request.messages()) {
             append(canonical, message.role());
             append(canonical, message.content());

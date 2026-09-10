@@ -20,7 +20,9 @@ class StubModelProviderTest {
                 "tenant-1",
                 "stub-echo-v1",
                 List.of(new ChatMessage("user", "hello")),
-                0.7
+                0.7,
+                null,
+                null
         );
 
         ProviderResponse response = provider.invoke(request);
