@@ -49,33 +49,33 @@ public class ChatCompletionService {
         try {
             result = engine.execute(request, traceId, tenantId);
         } catch (RuntimeException exception) {
-            int inputTokens = 0;
-            int outputTokens = 0;
-            if (exception instanceof ProviderUsageException usageException) {
-                inputTokens = usageException.inputTokens();
-                outputTokens = usageException.outputTokens();
-            } else if (exception instanceof ProviderRoutingException routingException) {
-                inputTokens = routingException.inputTokens();
-                outputTokens = routingException.outputTokens();
-            }
-            VirtualBillingCharge billing = virtualBillingService.recordFailure(
-                    tenantId,
-                    traceId,
-                    inputTokens,
-                    outputTokens
-            );
-            LOGGER.info(
-                    "Virtual billing recorded failed request traceId={} tenantId={} inputTokens={} outputTokens={} costCny={} remainingBalanceCny={}",
-                    traceId,
-                    tenantId,
-                    billing.inputTokens(),
-                    billing.outputTokens(),
-                    billing.costCny(),
-                    billing.remainingBalanceCny()
-            );
-            metrics.failure(tenantId, exception.getClass().getSimpleName(), elapsedMs(startedAt), billing);
+            recordFailure(exception, traceId, tenantId, startedAt);
             throw exception;
         }
+        return responseFrom(result, traceId, tenantId);
+    }
+
+    ChatCompletionResponse responseFrom(
+            ChatProcessingResult result,
+            String traceId,
+            String tenantId
+    ) {
+        return responseFrom(
+                result,
+                traceId,
+                tenantId,
+                "chatcmpl-" + UUID.randomUUID().toString().replace("-", ""),
+                Instant.now().getEpochSecond()
+        );
+    }
+
+    ChatCompletionResponse responseFrom(
+            ChatProcessingResult result,
+            String traceId,
+            String tenantId,
+            String responseId,
+            long created
+    ) {
         ChatProcessingContext context = result.context();
         ProviderResponse providerResponse = context.providerResponse();
         VirtualBillingCharge billing = context.virtualBillingCharge();
@@ -123,14 +123,47 @@ public class ChatCompletionService {
         );
 
         return new ChatCompletionResponse(
-                "chatcmpl-" + UUID.randomUUID().toString().replace("-", ""),
+                responseId,
                 "chat.completion",
-                Instant.now().getEpochSecond(),
+                created,
                 providerResponse.model(),
                 List.of(choice),
                 usage,
                 metadata
         );
+    }
+
+    void recordFailure(
+            RuntimeException exception,
+            String traceId,
+            String tenantId,
+            long startedAt
+    ) {
+        int inputTokens = 0;
+        int outputTokens = 0;
+        if (exception instanceof ProviderUsageException usageException) {
+            inputTokens = usageException.inputTokens();
+            outputTokens = usageException.outputTokens();
+        } else if (exception instanceof ProviderRoutingException routingException) {
+            inputTokens = routingException.inputTokens();
+            outputTokens = routingException.outputTokens();
+        }
+        VirtualBillingCharge billing = virtualBillingService.recordFailure(
+                tenantId,
+                traceId,
+                inputTokens,
+                outputTokens
+        );
+        LOGGER.info(
+                "Virtual billing recorded failed request traceId={} tenantId={} inputTokens={} outputTokens={} costCny={} remainingBalanceCny={}",
+                traceId,
+                tenantId,
+                billing.inputTokens(),
+                billing.outputTokens(),
+                billing.costCny(),
+                billing.remainingBalanceCny()
+        );
+        metrics.failure(tenantId, exception.getClass().getSimpleName(), elapsedMs(startedAt), billing);
     }
 
     private long elapsedMs(long startedAt) {

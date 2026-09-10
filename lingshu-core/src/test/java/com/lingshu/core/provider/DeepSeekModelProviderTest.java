@@ -17,6 +17,11 @@ import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -36,6 +41,8 @@ class DeepSeekModelProviderTest {
     private final AtomicReference<String> authorization = new AtomicReference<>();
     private final AtomicInteger failuresBeforeSuccess = new AtomicInteger();
     private final AtomicInteger requestCount = new AtomicInteger();
+    private final AtomicBoolean delayedStream = new AtomicBoolean();
+    private final AtomicReference<CountDownLatch> releaseStreamTail = new AtomicReference<>();
     private HttpServer server;
 
     @BeforeEach
@@ -85,6 +92,50 @@ class DeepSeekModelProviderTest {
         assertEquals(512, request.path("max_tokens").asInt());
         assertEquals(0.9, request.path("top_p").asDouble());
         assertTrue(!request.path("stream").asBoolean());
+    }
+
+    @Test
+    void forwardsStreamingDeltaBeforeProviderResponseCompletes() throws Exception {
+        delayedStream.set(true);
+        CountDownLatch releaseTail = new CountDownLatch(1);
+        releaseStreamTail.set(releaseTail);
+        CountDownLatch firstDeltaReceived = new CountDownLatch(1);
+        List<String> deltas = new CopyOnWriteArrayList<>();
+
+        CompletableFuture<ProviderResponse> responseFuture = CompletableFuture.supplyAsync(() ->
+                provider().stream(request("trace-stream"), delta -> {
+                    deltas.add(delta);
+                    firstDeltaReceived.countDown();
+                }));
+
+        try {
+            assertTrue(firstDeltaReceived.await(2, TimeUnit.SECONDS));
+            assertTrue(!responseFuture.isDone());
+        } finally {
+            releaseTail.countDown();
+        }
+        ProviderResponse response = responseFuture.get(2, TimeUnit.SECONDS);
+
+        assertEquals(List.of("hello ", "from deepseek"), deltas);
+        assertEquals("hello from deepseek", response.content());
+        assertEquals(7, response.inputTokens());
+        assertEquals(4, response.outputTokens());
+        assertEquals("length", response.finishReason());
+        JsonNode request = objectMapper.readTree(requestBody.get());
+        assertTrue(request.path("stream").asBoolean());
+        assertTrue(request.path("stream_options").path("include_usage").asBoolean());
+    }
+
+    @Test
+    void stopsReadingProviderStreamWhenConsumerDisconnects() {
+        responseBody.set("data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{\"content\":\"second\"}}]}\n\n"
+                + "data: [DONE]\n\n");
+
+        assertThrows(ProviderStreamCancelledException.class, () ->
+                provider().stream(request("trace-cancel"), delta -> {
+                    throw new IOException("client disconnected");
+                }));
     }
 
     @Test
@@ -199,10 +250,36 @@ class DeepSeekModelProviderTest {
             status = 500;
             response = "{\"error\":\"temporary\",\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1}}";
         }
+        if (delayedStream.get()) {
+            writeDelayedStream(exchange, status);
+            return;
+        }
         byte[] body = response.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(status, body.length);
         exchange.getResponseBody().write(body);
+        exchange.close();
+    }
+
+    private void writeDelayedStream(HttpExchange exchange, int status) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+        exchange.sendResponseHeaders(status, 0);
+        String first = "data: {\"choices\":[{\"delta\":{\"content\":\"hello \"},"
+                + "\"finish_reason\":null}]}\n\n";
+        exchange.getResponseBody().write(first.getBytes(StandardCharsets.UTF_8));
+        exchange.getResponseBody().flush();
+        try {
+            releaseStreamTail.get().await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while delaying stream", exception);
+        }
+        String tail = "data: {\"choices\":[{\"delta\":{\"content\":\"from deepseek\"},"
+                + "\"finish_reason\":\"length\"}]}\n\n"
+                + "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,"
+                + "\"completion_tokens\":4}}\n\n"
+                + "data: [DONE]\n\n";
+        exchange.getResponseBody().write(tail.getBytes(StandardCharsets.UTF_8));
         exchange.close();
     }
 }

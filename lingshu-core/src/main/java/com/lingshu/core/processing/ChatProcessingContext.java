@@ -132,8 +132,10 @@ public final class ChatProcessingContext {
     }
 
     public void closePolicyPermit() {
-        if (policyPermit != null) {
-            policyPermit.close();
+        TenantRequestGuard.Permit permit = policyPermit;
+        policyPermit = null;
+        if (permit != null) {
+            permit.close();
         }
     }
 

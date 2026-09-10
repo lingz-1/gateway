@@ -9,11 +9,15 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.net.URI;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -93,25 +97,7 @@ public class DeepSeekModelProvider implements ModelProvider {
         int accumulatedInputTokens = 0;
         int accumulatedOutputTokens = 0;
         try {
-            Map<String, Object> requestFields = new LinkedHashMap<>();
-            requestFields.put("model", wireModel());
-            requestFields.put("messages", request.messages().stream()
-                    .map(message -> Map.of(
-                            "role", message.role(),
-                            "content", message.content()
-                    ))
-                    .toList());
-            requestFields.put("stream", false);
-            if (request.temperature() != null) {
-                requestFields.put("temperature", request.temperature());
-            }
-            if (request.maxTokens() != null) {
-                requestFields.put("max_tokens", request.maxTokens());
-            }
-            if (request.topP() != null) {
-                requestFields.put("top_p", request.topP());
-            }
-            String requestBody = objectMapper.writeValueAsString(requestFields);
+            String requestBody = objectMapper.writeValueAsString(requestFields(request, false));
             for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                 HttpRequest httpRequest = HttpRequest.newBuilder(endpoint)
                         .timeout(timeout)
@@ -169,6 +155,108 @@ public class DeepSeekModelProvider implements ModelProvider {
     }
 
     @Override
+    public ProviderResponse stream(ProviderRequest request, ProviderStreamConsumer consumer) {
+        if (isCircuitOpen()) {
+            throw new ProviderRoutingException("DeepSeek circuit breaker is open");
+        }
+        if (!concurrency.tryAcquire()) {
+            throw new ProviderRoutingException("DeepSeek concurrency limit exceeded");
+        }
+        int accumulatedInputTokens = 0;
+        int accumulatedOutputTokens = 0;
+        try {
+            String requestBody = objectMapper.writeValueAsString(requestFields(request, true));
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                HttpRequest httpRequest = HttpRequest.newBuilder(endpoint)
+                        .timeout(timeout)
+                        .header("Authorization", "Bearer " + apiKey)
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                        .build();
+                HttpResponse<InputStream> response;
+                try {
+                    response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
+                } catch (IOException exception) {
+                    if (attempt < maxAttempts) {
+                        pauseBeforeRetry(attempt);
+                        continue;
+                    }
+                    throw new IllegalStateException("DeepSeek streaming request failed", exception);
+                }
+                try (InputStream responseBody = response.body()) {
+                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                        String errorBody = new String(responseBody.readAllBytes(), StandardCharsets.UTF_8);
+                        int[] usage = parseUsage(errorBody);
+                        accumulatedInputTokens += usage[0];
+                        accumulatedOutputTokens += usage[1];
+                        if (isRetryable(response.statusCode()) && attempt < maxAttempts) {
+                            pauseBeforeRetry(attempt);
+                            continue;
+                        }
+                        registerFailure();
+                        throw new ProviderUsageException(
+                                "DeepSeek provider returned HTTP " + response.statusCode(),
+                                accumulatedInputTokens,
+                                accumulatedOutputTokens
+                        );
+                    }
+
+                    StreamAccumulator stream = new StreamAccumulator();
+                    consumer.onOpen(() -> closeQuietly(responseBody));
+                    try {
+                        readStream(responseBody, consumer, stream);
+                    } catch (IOException exception) {
+                        if (consumer.isCancelled()) {
+                            throw new ProviderStreamCancelledException(
+                                    "Provider stream consumer is unavailable",
+                                    exception
+                            );
+                        }
+                        if (!stream.emitted && attempt < maxAttempts) {
+                            pauseBeforeRetry(attempt);
+                            continue;
+                        }
+                        throw new IllegalStateException("DeepSeek response stream failed", exception);
+                    }
+                    if (consumer.isCancelled()) {
+                        throw new ProviderStreamCancelledException(
+                                "Provider stream consumer is unavailable",
+                                new IOException("Provider stream was cancelled")
+                        );
+                    }
+                    registerSuccess();
+                    return new ProviderResponse(
+                            PROVIDER_ID,
+                            model,
+                            stream.content.toString(),
+                            stream.inputTokens + accumulatedInputTokens,
+                            stream.outputTokens + accumulatedOutputTokens,
+                            stream.finishReason
+                    );
+                }
+            }
+            throw new IllegalStateException("DeepSeek streaming request attempts exhausted");
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            registerFailure();
+            throw new IllegalStateException("DeepSeek streaming request was interrupted", exception);
+        } catch (ProviderStreamCancelledException exception) {
+            throw exception;
+        } catch (ProviderUsageException | ProviderRoutingException exception) {
+            throw exception;
+        } catch (IllegalStateException exception) {
+            registerFailure();
+            throw exception;
+        } catch (Exception exception) {
+            registerFailure();
+            throw new IllegalStateException("DeepSeek streaming request failed", exception);
+        } finally {
+            concurrency.release();
+        }
+    }
+
+    @Override
     public ProviderHealth health() {
         ProviderHealth.Status status = isCircuitOpen() ? ProviderHealth.Status.DOWN : ProviderHealth.Status.UP;
         return new ProviderHealth(PROVIDER_ID, status, Instant.now());
@@ -194,6 +282,93 @@ public class DeepSeekModelProvider implements ModelProvider {
                 usageTokens[1],
                 finishReason.isTextual() ? finishReason.asText() : "stop"
         );
+    }
+
+    private Map<String, Object> requestFields(ProviderRequest request, boolean stream) {
+        Map<String, Object> requestFields = new LinkedHashMap<>();
+        requestFields.put("model", wireModel());
+        requestFields.put("messages", request.messages().stream()
+                .map(message -> Map.of(
+                        "role", message.role(),
+                        "content", message.content()
+                ))
+                .toList());
+        requestFields.put("stream", stream);
+        if (stream) {
+            requestFields.put("stream_options", Map.of("include_usage", true));
+        }
+        if (request.temperature() != null) {
+            requestFields.put("temperature", request.temperature());
+        }
+        if (request.maxTokens() != null) {
+            requestFields.put("max_tokens", request.maxTokens());
+        }
+        if (request.topP() != null) {
+            requestFields.put("top_p", request.topP());
+        }
+        return requestFields;
+    }
+
+    private void readStream(
+            InputStream responseBody,
+            ProviderStreamConsumer consumer,
+            StreamAccumulator stream
+    ) throws IOException {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(responseBody, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.startsWith("data:")) {
+                    continue;
+                }
+                String data = line.substring("data:".length()).stripLeading();
+                if (data.isBlank()) {
+                    continue;
+                }
+                if ("[DONE]".equals(data)) {
+                    return;
+                }
+                JsonNode root = objectMapper.readTree(data);
+                if (!root.path("error").isMissingNode()) {
+                    throw new IllegalStateException("DeepSeek stream returned an error event");
+                }
+                JsonNode choices = root.path("choices");
+                if (choices.isArray() && !choices.isEmpty()) {
+                    JsonNode choice = choices.get(0);
+                    JsonNode content = choice.path("delta").path("content");
+                    if (content.isTextual() && !content.asText().isEmpty()) {
+                        String delta = content.asText();
+                        try {
+                            consumer.onDelta(delta);
+                        } catch (IOException exception) {
+                            throw new ProviderStreamCancelledException(
+                                    "Provider stream consumer is unavailable",
+                                    exception
+                            );
+                        }
+                        stream.content.append(delta);
+                        stream.emitted = true;
+                    }
+                    JsonNode finishReason = choice.path("finish_reason");
+                    if (finishReason.isTextual() && !finishReason.asText().isBlank()) {
+                        stream.finishReason = finishReason.asText();
+                    }
+                }
+                int[] usage = parseUsage(root);
+                if (usage[0] > 0 || usage[1] > 0) {
+                    stream.inputTokens = usage[0];
+                    stream.outputTokens = usage[1];
+                }
+            }
+        }
+    }
+
+    private void closeQuietly(InputStream responseBody) {
+        try {
+            responseBody.close();
+        } catch (IOException ignored) {
+            // The upstream stream is already closed.
+        }
     }
 
     private int[] parseUsage(String responseBody) {
@@ -286,6 +461,15 @@ public class DeepSeekModelProvider implements ModelProvider {
             circuitOpenUntilEpochMs.set(System.currentTimeMillis() + circuitOpenDuration.toMillis());
             consecutiveFailures.set(0);
         }
+    }
+
+    private static final class StreamAccumulator {
+
+        private final StringBuilder content = new StringBuilder();
+        private boolean emitted;
+        private int inputTokens;
+        private int outputTokens;
+        private String finishReason = "stop";
     }
 
 }

@@ -150,6 +150,23 @@ class ChatCompletionIntegrationTest {
     }
 
     @Test
+    void completesStreamingCacheHitWithUsageAndWithoutProviderAttempt() throws Exception {
+        String body = "{\"model\":\"stub-echo-v1\",\"stream\":true,"
+                + "\"messages\":[{\"role\":\"user\",\"content\":\"stream-cache-probe\"}]}";
+
+        HttpResponse<String> first = postRaw(body, "trace-stream-cache-first");
+        HttpResponse<String> second = postRaw(body, "trace-stream-cache-second");
+
+        assertEquals(200, first.statusCode());
+        assertTrue(first.body().contains("\"cacheStatus\":\"MISS\""));
+        assertEquals(200, second.statusCode());
+        assertTrue(second.body().contains("\"cacheStatus\":\"EXACT\""));
+        assertTrue(second.body().contains("\"providerAttempts\":[]"));
+        assertTrue(second.body().contains("prompt_tokens"));
+        assertTrue(second.body().contains("[DONE]"));
+    }
+
+    @Test
     void appliesTenantPiiPolicyUpdatesWithoutRestart() throws Exception {
         String tenantId = "tenant-dynamic-policy";
         assertEquals(200, putPolicy(tenantId, false).statusCode());

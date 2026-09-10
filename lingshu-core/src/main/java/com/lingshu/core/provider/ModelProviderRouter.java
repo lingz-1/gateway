@@ -76,6 +76,10 @@ public class ModelProviderRouter {
         updateLatency(stats, startedAtNanos);
     }
 
+    public void recordCancellation(ModelProvider provider) {
+        stats(provider).inFlight.updateAndGet(value -> Math.max(0, value - 1));
+    }
+
     public List<AvailableModel> availableModels() {
         return providersByModel.entrySet().stream()
                 .map(entry -> {
