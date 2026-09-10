@@ -46,7 +46,7 @@
 
 验收：精确命中、语义命中、未命中三条路径可重复验证，并输出命中率和误命中率。
 
-当前进度：阶段 0、阶段 1、阶段 2 和阶段 3 已完成；阶段 4 已进入开发，已打通内存、PostgreSQL 和 Nacos 三种租户策略源、运行时策略更新、租户级 PII/缓存/模型/限流控制，以及带租户标签的 Micrometer 请求、延迟、Token、费用和失败指标。
+当前进度：阶段 0、阶段 1、阶段 2 和阶段 3 已完成；阶段 4 已进入开发，已打通内存、PostgreSQL 和 Nacos 三种租户策略源、运行时策略更新、租户级 PII/缓存/模型控制、内存与 Redis 分布式限流，以及带租户标签的 Micrometer 请求、延迟、Token、费用和失败指标。
 
 阶段 3 进展：Redis Lua 预扣/确认/释放、PostgreSQL `lingshu_budget_ledger` 账本、带认领机制的 `lingshu_budget_outbox`、reservation 幂等状态转换、虚拟计费 Processor、PostgreSQL 虚拟租户账户/用量表、余额与用量查询、Kafka 发布器、Outbox Relay、幂等消费表和超时回收扫描器已完成。Kafka Compose 服务已绑定 `E:\LingShuData\kafka` 并启动；真实预算与 Kafka Relay 默认关闭，避免开发环境误启用真实预算扣减。
 
@@ -69,6 +69,7 @@
 - 抽象 `TenantPolicySource`，先实现本地/数据库版本。
 - 本地动态策略进度：默认零依赖模式已使用线程安全内存存储，`PUT /internal/tenants/{tenantId}/policy` 更新后对下一请求立即生效；开启持久化后自动切换到 PostgreSQL 存储。
 - 已完成租户启停、模型白名单、PII 脱敏、精确/语义缓存开关、RPM/并发限制和虚拟计费单价策略。
+- 已完成可切换的租户限流存储：默认内存模式保持零依赖，Redis 模式通过 Lua 原子执行 RPM 与并发许可判定，使用 Redis 服务器时间统一窗口，并通过许可 TTL 回收异常实例占用。
 - Nacos HTTP 适配器已完成：按 MD5 轮询更新，远端策略优先，本地/数据库策略回退；拉取或解析失败时保留最后一次有效快照，且配置中心实现未侵入 Processor Engine。
 - Micrometer 请求、延迟、Token、虚拟费用和失败指标已补齐租户标签；Prometheus 抓取已具备，Grafana 租户面板和结构化日志仍待完善。
 - 完善多租户策略、告警和错误契约。

@@ -149,6 +149,10 @@ API key authentication is disabled by default. Enable it with `LINGSHU_GATEWAY_A
 
 Tenant policies can be read and updated at `/internal/tenants/{tenantId}/policy`. The default zero-dependency profile keeps updates in a thread-safe in-memory store, so changes apply to the next request without restarting Core. Set `LINGSHU_TENANT_POLICY_PERSISTENCE_ENABLED=true` to use PostgreSQL instead. Policies control tenant availability, allowed models, PII redaction, exact and semantic caching, request rate, concurrency, and virtual token prices.
 
+Tenant request limits also default to an in-memory fixed-minute window. Set `LINGSHU_TENANT_RATE_LIMIT_STORE=redis` to enforce RPM and concurrent-request limits across Core instances. Acquisition uses one Redis Lua script, Redis server time, and tenant-scoped keys in the same cluster hash slot. Concurrent permits expire after `LINGSHU_TENANT_RATE_LIMIT_PERMIT_TTL` (default `10m`) so a crashed instance cannot hold capacity forever; configure this TTL above the longest allowed request duration. Redis acquisition failures are fail-closed, while release failures are recovered by the permit TTL.
+
+The full-infrastructure and Redis Core launch scripts select the Redis limiter automatically. The default `start-local.ps1` path explicitly keeps the in-memory limiter so the frontend remains testable without infrastructure.
+
 An optional Nacos read source is available through `LINGSHU_TENANT_POLICY_NACOS_ENABLED=true`. It polls the Nacos 3.x HTTP configuration API, compares the returned MD5, and atomically replaces the remote snapshot only after successful validation. Nacos policies take precedence over the local or PostgreSQL store; a fetch or parse failure keeps the last valid remote snapshot. The adapter is disabled by default, uses no Nacos SDK, and accepts its bearer token only through `LINGSHU_NACOS_ACCESS_TOKEN`.
 
 The Nacos data item is a JSON document with a `policies` array. Each entry uses the same fields as the internal tenant-policy API:

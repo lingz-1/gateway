@@ -114,6 +114,7 @@ if (-not (Test-Health $CoreHealth)) {
         $env:LINGSHU_CACHE_EXACT_STORE = "memory"
         $env:LINGSHU_DATABASE_MIGRATION_ENABLED = "false"
         $env:LINGSHU_TENANT_POLICY_PERSISTENCE_ENABLED = "false"
+        $env:LINGSHU_TENANT_RATE_LIMIT_STORE = "memory"
         $env:LINGSHU_TENANT_POLICY_NACOS_ENABLED = "false"
         $env:LINGSHU_VIRTUAL_BILLING_PERSISTENCE_ENABLED = "false"
         $env:LINGSHU_BILLING_ENABLED = "false"

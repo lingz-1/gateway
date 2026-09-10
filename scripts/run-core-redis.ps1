@@ -12,5 +12,6 @@ foreach ($line in Get-Content -LiteralPath $EnvironmentFile) {
 }
 
 $env:LINGSHU_CACHE_EXACT_STORE = "redis"
+$env:LINGSHU_TENANT_RATE_LIMIT_STORE = "redis"
 & (Join-Path $PSScriptRoot "run-core.ps1") @args
 exit $LASTEXITCODE

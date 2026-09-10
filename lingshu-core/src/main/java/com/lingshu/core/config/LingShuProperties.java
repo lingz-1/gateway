@@ -39,9 +39,45 @@ public class LingShuProperties {
     public static class TenantPolicy {
 
         private final Nacos nacos = new Nacos();
+        private final RateLimit rateLimit = new RateLimit();
 
         public Nacos getNacos() {
             return nacos;
+        }
+
+        public RateLimit getRateLimit() {
+            return rateLimit;
+        }
+    }
+
+    public static class RateLimit {
+
+        private String store = "memory";
+        private String redisKeyPrefix = "lingshu:rate-limit:";
+        private java.time.Duration permitTtl = java.time.Duration.ofMinutes(10);
+
+        public String getStore() {
+            return store;
+        }
+
+        public void setStore(String store) {
+            this.store = store;
+        }
+
+        public String getRedisKeyPrefix() {
+            return redisKeyPrefix;
+        }
+
+        public void setRedisKeyPrefix(String redisKeyPrefix) {
+            this.redisKeyPrefix = redisKeyPrefix;
+        }
+
+        public java.time.Duration getPermitTtl() {
+            return permitTtl;
+        }
+
+        public void setPermitTtl(java.time.Duration permitTtl) {
+            this.permitTtl = permitTtl;
         }
     }
 

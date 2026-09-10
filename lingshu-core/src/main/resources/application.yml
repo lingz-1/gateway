@@ -27,6 +27,10 @@ lingshu:
     migration-enabled: ${LINGSHU_DATABASE_MIGRATION_ENABLED:false}
   tenant-policy:
     persistence-enabled: ${LINGSHU_TENANT_POLICY_PERSISTENCE_ENABLED:false}
+    rate-limit:
+      store: ${LINGSHU_TENANT_RATE_LIMIT_STORE:memory}
+      redis-key-prefix: ${LINGSHU_TENANT_RATE_LIMIT_REDIS_KEY_PREFIX:lingshu:rate-limit:}
+      permit-ttl: ${LINGSHU_TENANT_RATE_LIMIT_PERMIT_TTL:10m}
     nacos:
       enabled: ${LINGSHU_TENANT_POLICY_NACOS_ENABLED:false}
       server-url: ${LINGSHU_NACOS_SERVER_URL:http://127.0.0.1:8848}
