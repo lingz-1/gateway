@@ -6,6 +6,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 @Component
@@ -32,7 +34,7 @@ public class PiiRedactionProcessor implements ChatProcessor {
         List<ChatMessage> redacted = request.messages().stream()
                 .map(message -> new ChatMessage(
                         message.role(),
-                        message.content() == null ? null : redact(message.content()),
+                        redactContent(message.content()),
                         message.name(),
                         message.tool_call_id(),
                         message.tool_calls()
@@ -51,6 +53,32 @@ public class PiiRedactionProcessor implements ChatProcessor {
                 request.tools(),
                 request.tool_choice()
         ));
+    }
+
+    private Object redactContent(Object content) {
+        if (content instanceof String text) {
+            return redact(text);
+        }
+        if (!(content instanceof List<?> parts)) {
+            return content;
+        }
+        return parts.stream().map(this::redactPart).toList();
+    }
+
+    private Object redactPart(Object part) {
+        if (!(part instanceof Map<?, ?> source)) {
+            return part;
+        }
+        Map<String, Object> redacted = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            String name = String.valueOf(key);
+            if (("text".equals(name) || "refusal".equals(name)) && value instanceof String text) {
+                redacted.put(name, redact(text));
+            } else {
+                redacted.put(name, value);
+            }
+        });
+        return redacted;
     }
 
     String redact(String value) {

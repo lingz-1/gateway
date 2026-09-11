@@ -217,6 +217,37 @@ class ChatCompletionIntegrationTest {
     }
 
     @Test
+    void acceptsMultimodalContentAndUsesExactCacheOnly() throws Exception {
+        String body = "{\"model\":\"stub-echo-v1\",\"messages\":[{\"role\":\"user\",\"content\":["
+                + "{\"type\":\"text\",\"text\":\"describe\"},"
+                + "{\"type\":\"image_url\",\"image_url\":{"
+                + "\"url\":\"data:image/png;base64,AAAA\",\"detail\":\"low\"}}]}]}";
+
+        HttpResponse<String> first = postRaw(body, "trace-multimodal-first");
+        HttpResponse<String> second = postRaw(body, "trace-multimodal-second");
+
+        assertEquals(200, first.statusCode());
+        assertEquals(200, second.statusCode());
+        assertEquals("MISS", first.headers().firstValue("X-LingShu-Cache").orElseThrow());
+        assertEquals("EXACT", second.headers().firstValue("X-LingShu-Cache").orElseThrow());
+        assertTrue(first.body().contains("stub:user:describe[image]"));
+        assertFalse(first.body().contains("data:image/png"));
+        assertFalse(first.body().contains("\"name\":\"semantic-cache-lookup\""));
+    }
+
+    @Test
+    void rejectsMalformedMultimodalContent() throws Exception {
+        String body = "{\"model\":\"stub-echo-v1\",\"messages\":[{\"role\":\"user\",\"content\":["
+                + "{\"type\":\"image_url\",\"image_url\":{"
+                + "\"url\":\"https://example.com/image.png\",\"detail\":\"maximum\"}}]}]}";
+
+        HttpResponse<String> response = postRaw(body, "trace-invalid-multimodal");
+
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("INVALID_REQUEST"));
+    }
+
+    @Test
     void appliesTenantPiiPolicyUpdatesWithoutRestart() throws Exception {
         String tenantId = "tenant-dynamic-policy";
         assertEquals(200, putPolicy(tenantId, false).statusCode());

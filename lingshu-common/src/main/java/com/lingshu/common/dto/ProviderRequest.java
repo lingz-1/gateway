@@ -77,21 +77,6 @@ public record ProviderRequest(
     }
 
     public String prompt() {
-        return messages.stream().map(message -> {
-            StringBuilder value = new StringBuilder(message.role()).append(':');
-            if (message.content() != null) {
-                value.append(message.content());
-            }
-            if (message.tool_call_id() != null) {
-                value.append("|tool_call_id=").append(message.tool_call_id());
-            }
-            if (message.tool_calls() != null) {
-                message.tool_calls().forEach(call -> value
-                        .append("|tool_call=").append(call.id())
-                        .append(':').append(call.function().name())
-                        .append(':').append(call.function().arguments()));
-            }
-            return value.toString();
-        }).collect(Collectors.joining("\n"));
+        return messages.stream().map(ChatMessage::promptText).collect(Collectors.joining("\n"));
     }
 }

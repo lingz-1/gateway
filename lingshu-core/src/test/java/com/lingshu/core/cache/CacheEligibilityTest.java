@@ -33,6 +33,29 @@ class CacheEligibilityTest {
                 List.of(new ChatMessage("tool", "result", null, "call-1", null)), null, null)));
     }
 
+    @Test
+    void allowsExactButRejectsSemanticCachingForStructuredContent() {
+        ChatCompletionRequest request = request(
+                List.of(new ChatMessage(
+                        "user",
+                        List.of(
+                                Map.of("type", "text", "text", "describe"),
+                                Map.of("type", "image_url", "image_url", Map.of(
+                                        "url", "https://example.com/image.png"
+                                ))
+                        ),
+                        null,
+                        null,
+                        null
+                )),
+                null,
+                null
+        );
+
+        assertTrue(CacheEligibility.isCacheable(request));
+        assertFalse(CacheEligibility.isSemanticCacheable(request));
+    }
+
     private ChatCompletionRequest request(
             List<ChatMessage> messages,
             List<ChatTool> tools,

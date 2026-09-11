@@ -16,4 +16,9 @@ public final class CacheEligibility {
                         || (message.tool_calls() != null && !message.tool_calls().isEmpty())
         );
     }
+
+    public static boolean isSemanticCacheable(ChatCompletionRequest request) {
+        return isCacheable(request)
+                && request.messages().stream().noneMatch(message -> message.hasStructuredContent());
+    }
 }

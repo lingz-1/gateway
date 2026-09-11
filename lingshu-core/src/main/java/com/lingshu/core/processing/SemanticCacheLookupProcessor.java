@@ -24,7 +24,7 @@ public class SemanticCacheLookupProcessor implements ChatProcessor {
     @Override
     public boolean shouldProcess(ChatProcessingContext context) {
         return cacheService.isEnabled()
-                && CacheEligibility.isCacheable(context.request())
+                && CacheEligibility.isSemanticCacheable(context.request())
                 && (context.tenantPolicy() == null || context.tenantPolicy().semanticCacheEnabled())
                 && !context.completed();
     }

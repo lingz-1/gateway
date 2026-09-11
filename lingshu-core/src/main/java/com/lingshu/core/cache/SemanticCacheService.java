@@ -122,7 +122,7 @@ public class SemanticCacheService {
 
     private String requestText(ChatCompletionRequest request) {
         return request.messages().stream()
-                .map(message -> lengthPrefixed(message.role()) + lengthPrefixed(message.content()))
+                .map(message -> lengthPrefixed(message.promptText()))
                 .collect(Collectors.joining("\n"));
     }
 

@@ -105,6 +105,41 @@ class DeepSeekModelProviderTest {
     }
 
     @Test
+    void forwardsStructuredMultimodalContentWithoutFlattening() throws Exception {
+        ProviderRequest multimodal = new ProviderRequest(
+                "trace-multimodal",
+                "tenant-1",
+                "deepseek-v4flash",
+                List.of(new ChatMessage(
+                        "user",
+                        List.of(
+                                Map.of("type", "text", "text", "Describe this"),
+                                Map.of("type", "image_url", "image_url", Map.of(
+                                        "url", "data:image/png;base64,AAAA",
+                                        "detail", "low"
+                                ))
+                        ),
+                        null,
+                        null,
+                        null
+                )),
+                null,
+                null,
+                null
+        );
+
+        provider().invoke(multimodal);
+
+        JsonNode content = objectMapper.readTree(requestBody.get())
+                .path("messages").get(0).path("content");
+        assertTrue(content.isArray());
+        assertEquals("Describe this", content.get(0).path("text").asText());
+        assertEquals("data:image/png;base64,AAAA",
+                content.get(1).path("image_url").path("url").asText());
+        assertEquals("low", content.get(1).path("image_url").path("detail").asText());
+    }
+
+    @Test
     void forwardsStreamingDeltaBeforeProviderResponseCompletes() throws Exception {
         delayedStream.set(true);
         CountDownLatch releaseTail = new CountDownLatch(1);
