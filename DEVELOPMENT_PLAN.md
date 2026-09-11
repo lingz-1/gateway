@@ -80,6 +80,7 @@
 
 - Resilience4j 超时、重试、熔断和降级。
 - SSE 流式输出与 usage 末帧计费；缺失 usage 时使用本地计数回退，并限制单次流式响应的累计字符数。
+- 已增加端到端 TTFT histogram、Grafana 租户/P95/P99/TTFT 面板，以及无第三方依赖的并发压测脚本；首版本地 Stub 冷/热缓存基线已记录到 `docs/performance-baseline.md`。
 - 压测、容量基线、故障注入和恢复测试。
 
 验收：故障切换行为确定；流式计费可核对；形成吞吐、P95/P99 和资源占用报告。

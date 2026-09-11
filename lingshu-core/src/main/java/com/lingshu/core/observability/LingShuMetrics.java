@@ -52,4 +52,16 @@ public class LingShuMetrics {
         registry.counter("lingshu.chat.virtual.cost.cny", "tenant", tenantId, "provider", "failed")
                 .increment(billing.costCny().doubleValue());
     }
+
+    public void timeToFirstToken(
+            String tenantId,
+            String provider,
+            String model,
+            CacheStatus cacheStatus,
+            long durationNanos
+    ) {
+        registry.timer("lingshu.chat.ttft", "tenant", tenantId, "provider", provider,
+                        "model", model, "cache", cacheStatus.name().toLowerCase())
+                .record(Duration.ofNanos(Math.max(1, durationNanos)));
+    }
 }

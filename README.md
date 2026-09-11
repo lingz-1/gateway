@@ -51,6 +51,14 @@ With all three applications running, exercise the real browser flow in headless 
 D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev python .\scripts\test-web-e2e.py
 ```
 
+Run the dependency-free mixed streaming/non-streaming load test against Gateway:
+
+```powershell
+D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev D:\anaconda\envs\lingshu-dev\python.exe scripts\load-test.py --requests 200 --concurrency 20 --prompt-cardinality 200 --stream-ratio 0.5
+```
+
+Add `--warm-cache` and use a smaller prompt cardinality for an exact-cache baseline. The script reports throughput, latency P50/P95/P99, streaming TTFT P50/P95/P99, HTTP status codes, errors, and cache-result counts. The first recorded local baseline is documented in [`docs/performance-baseline.md`](docs/performance-baseline.md).
+
 To start the production-like local infrastructure and Qwen embedding profile, add `-FullInfrastructure`. This requires `.env`, Docker, and the model under `E:\LingShuData\models\Qwen3-Embedding-4B`:
 
 ```powershell

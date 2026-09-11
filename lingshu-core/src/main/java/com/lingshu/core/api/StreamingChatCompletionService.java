@@ -4,6 +4,7 @@ import com.lingshu.common.dto.ChatCompletionRequest;
 import com.lingshu.common.dto.ChatCompletionResponse;
 import com.lingshu.common.dto.ProviderRequest;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.core.observability.LingShuMetrics;
 import com.lingshu.core.processing.ChatProcessingContext;
 import com.lingshu.core.processing.ChatProcessingResult;
 import com.lingshu.core.processing.ChatProcessorEngine;
@@ -37,17 +38,20 @@ public class StreamingChatCompletionService {
     private final ChatCompletionService completionService;
     private final ChatProcessorEngine engine;
     private final ModelProviderRouter router;
+    private final LingShuMetrics metrics;
     private final ExecutorService streamingExecutor;
 
     public StreamingChatCompletionService(
             ChatCompletionService completionService,
             ChatProcessorEngine engine,
             ModelProviderRouter router,
+            LingShuMetrics metrics,
             ExecutorService streamingExecutor
     ) {
         this.completionService = completionService;
         this.engine = engine;
         this.router = router;
+        this.metrics = metrics;
         this.streamingExecutor = streamingExecutor;
     }
 
@@ -84,9 +88,16 @@ public class StreamingChatCompletionService {
                 ProviderResponse cachedResponse = result.context().providerResponse();
                 sendDelta(emitter, cancelled, responseId, created, cachedResponse.model(),
                         cachedResponse.content());
+                metrics.timeToFirstToken(
+                        tenantId,
+                        cachedResponse.provider(),
+                        cachedResponse.model(),
+                        result.context().cacheStatus(),
+                        System.nanoTime() - startedAt
+                );
             } else {
                 ProviderResponse providerResponse = invokeProviderStream(
-                        execution.context(), emitter, cancelled, cancelUpstream, responseId, created);
+                        execution.context(), emitter, cancelled, cancelUpstream, responseId, created, startedAt);
                 result = engine.finishStreaming(execution, providerResponse);
             }
             ChatCompletionResponse response = completionService.responseFrom(
@@ -132,7 +143,8 @@ public class StreamingChatCompletionService {
             AtomicBoolean cancelled,
             AtomicReference<Runnable> cancelUpstream,
             String responseId,
-            long created
+            long created,
+            long requestStartedAt
     ) {
         ProviderRequest providerRequest = new ProviderRequest(
                 context.traceId(),
@@ -163,7 +175,15 @@ public class StreamingChatCompletionService {
                         }
                         sendDelta(emitter, cancelled, responseId, created,
                                 context.request().model(), delta);
-                        emitted.set(true);
+                        if (emitted.compareAndSet(false, true)) {
+                            metrics.timeToFirstToken(
+                                    context.tenantId(),
+                                    candidate.id(),
+                                    context.request().model(),
+                                    context.cacheStatus(),
+                                    System.nanoTime() - requestStartedAt
+                            );
+                        }
                     }
 
                     @Override

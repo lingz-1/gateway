@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -44,6 +45,24 @@ class LingShuMetricsTest {
                 .tags("status", "failure", "tenant", "tenant-failed",
                         "exception", "ProviderRoutingException")
                 .counter().count());
+    }
+
+    @Test
+    void recordsStreamingTimeToFirstTokenByTenantAndCacheStatus() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        LingShuMetrics metrics = new LingShuMetrics(registry);
+
+        metrics.timeToFirstToken("tenant-stream", "stub", "stub-echo-v1", CacheStatus.MISS,
+                TimeUnit.MILLISECONDS.toNanos(25));
+
+        assertEquals(1, registry.get("lingshu.chat.ttft")
+                .tags("tenant", "tenant-stream", "provider", "stub",
+                        "model", "stub-echo-v1", "cache", "miss")
+                .timer().count());
+        assertEquals(25.0, registry.get("lingshu.chat.ttft")
+                .tags("tenant", "tenant-stream", "provider", "stub",
+                        "model", "stub-echo-v1", "cache", "miss")
+                .timer().totalTime(TimeUnit.MILLISECONDS));
     }
 
     private VirtualBillingCharge charge() {

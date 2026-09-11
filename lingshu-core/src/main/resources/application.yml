@@ -123,6 +123,11 @@ lingshu:
     enabled: ${LINGSHU_KAFKA_ENABLED:false}
 
 management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        lingshu.chat.duration: true
+        lingshu.chat.ttft: true
   endpoints:
     web:
       exposure:
