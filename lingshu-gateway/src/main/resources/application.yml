@@ -19,6 +19,9 @@ lingshu:
     api-key:
       enabled: ${LINGSHU_GATEWAY_API_KEY_ENABLED:false}
       value: ${LINGSHU_GATEWAY_API_KEY:}
+    request-policy:
+      tenant-id-required: ${LINGSHU_GATEWAY_TENANT_ID_REQUIRED:true}
+      max-body-bytes: ${LINGSHU_GATEWAY_MAX_BODY_BYTES:20971520}
 
 management:
   endpoints:

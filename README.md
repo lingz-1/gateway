@@ -159,6 +159,8 @@ The wrapper always invokes `lingshu-dev`; the dataset and report default to the 
 
 API key authentication is disabled by default. Enable it with `LINGSHU_GATEWAY_API_KEY_ENABLED=true` and provide the key through `LINGSHU_GATEWAY_API_KEY`. No external API key or infrastructure service is required for the verification build.
 
+Gateway validates Chat Completions requests before forwarding them to Core. `X-Tenant-Id` is required by default and must contain 1–128 ASCII letters, digits, dots, underscores, or hyphens, starting with a letter or digit. The endpoint requires `application/json`, rejects duplicate tenant headers, and limits both fixed-length and chunked request bodies to 20 MiB. Override the size with `LINGSHU_GATEWAY_MAX_BODY_BYTES`, or disable the tenant-header requirement only for legacy local clients with `LINGSHU_GATEWAY_TENANT_ID_REQUIRED=false`. Policy rejections use the shared JSON error contract and always include `X-Trace-Id` plus `Cache-Control: no-store`.
+
 ## Dynamic tenant policies
 
 Tenant policies can be read and updated at `/internal/tenants/{tenantId}/policy`. The default zero-dependency profile keeps updates in a thread-safe in-memory store, so changes apply to the next request without restarting Core. Set `LINGSHU_TENANT_POLICY_PERSISTENCE_ENABLED=true` to use PostgreSQL instead. Policies control tenant availability, allowed models, PII redaction, exact and semantic caching, request rate, concurrency, and virtual token prices.

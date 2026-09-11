@@ -3,6 +3,8 @@ package com.lingshu.common.contracts;
 public enum ErrorCode {
     INVALID_REQUEST,
     AUTHENTICATION_FAILED,
+    UNSUPPORTED_MEDIA_TYPE,
+    PAYLOAD_TOO_LARGE,
     RATE_LIMITED,
     BUDGET_EXCEEDED,
     PROVIDER_UNAVAILABLE,
