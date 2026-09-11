@@ -1,14 +1,24 @@
 param(
     [string]$Endpoint = "http://127.0.0.1:8090/embed",
-    [string]$Dataset = "E:\LingShuData\datasets\semantic-eval-samples.jsonl",
-    [string]$Report = "E:\LingShuData\logs\semantic-threshold-report.txt"
+    [string]$Dataset,
+    [string]$Report
 )
 
 $ErrorActionPreference = "Stop"
-$condaExecutable = "D:\anaconda\Scripts\conda.exe"
+$DataRoot = if ([string]::IsNullOrWhiteSpace($env:LINGSHU_DATA_ROOT)) {
+    "E:\LingShuData"
+} else {
+    $env:LINGSHU_DATA_ROOT
+}
+if ([string]::IsNullOrWhiteSpace($Dataset)) {
+    $Dataset = Join-Path $DataRoot "datasets\semantic-eval-samples.jsonl"
+}
+if ([string]::IsNullOrWhiteSpace($Report)) {
+    $Report = Join-Path $DataRoot "logs\semantic-threshold-report.txt"
+}
 $pythonScript = Join-Path $PSScriptRoot "evaluate_semantic_threshold.py"
 
-& $condaExecutable run --no-capture-output -n lingshu-dev python $pythonScript `
+& (Join-Path $PSScriptRoot "python.ps1") $pythonScript `
     --endpoint $Endpoint `
     --dataset $Dataset `
     --report $Report

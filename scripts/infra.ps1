@@ -5,27 +5,50 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$DockerCompose = "D:\Docker\resources\bin\docker-compose.exe"
-if (-not (Test-Path -LiteralPath $DockerCompose)) {
-    throw "Docker Compose was not found at $DockerCompose."
+$DockerPrefix = @()
+$DockerCompose = $env:LINGSHU_DOCKER_COMPOSE_EXE
+if (-not [string]::IsNullOrWhiteSpace($DockerCompose)) {
+    if (-not (Test-Path -LiteralPath $DockerCompose)) {
+        throw "LINGSHU_DOCKER_COMPOSE_EXE does not exist: $DockerCompose"
+    }
+} else {
+    $DockerCommand = Get-Command docker -ErrorAction SilentlyContinue
+    if ($null -ne $DockerCommand) {
+        $PreviousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $null = & $DockerCommand.Path compose version 2>&1
+        $ComposePluginExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $PreviousErrorActionPreference
+        if ($ComposePluginExitCode -eq 0) {
+            $DockerCompose = $DockerCommand.Path
+            $DockerPrefix = @("compose")
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($DockerCompose)) {
+        $ComposeCommand = Get-Command docker-compose -ErrorAction SilentlyContinue
+        if ($null -eq $ComposeCommand) {
+            throw "Docker Compose was not found. Add docker to PATH or set LINGSHU_DOCKER_COMPOSE_EXE."
+        }
+        $DockerCompose = $ComposeCommand.Path
+    }
 }
 $ComposeArgs = @("--project-directory", $ProjectRoot, "--env-file", (Join-Path $ProjectRoot ".env"), "-f", (Join-Path $ProjectRoot "compose.yaml"))
 
 switch ($Action) {
     "up" {
-        & $DockerCompose @ComposeArgs up --detach --wait
+        & $DockerCompose @DockerPrefix @ComposeArgs up --detach --wait
     }
     "down" {
-        & $DockerCompose @ComposeArgs down
+        & $DockerCompose @DockerPrefix @ComposeArgs down
     }
     "status" {
-        & $DockerCompose @ComposeArgs ps
+        & $DockerCompose @DockerPrefix @ComposeArgs ps
     }
     "logs" {
-        & $DockerCompose @ComposeArgs logs --tail 100
+        & $DockerCompose @DockerPrefix @ComposeArgs logs --tail 100
     }
     "pull" {
-        & $DockerCompose @ComposeArgs pull
+        & $DockerCompose @DockerPrefix @ComposeArgs pull
     }
 }
 

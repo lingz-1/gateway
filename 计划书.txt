@@ -70,9 +70,9 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    AI模型适配层（Spring AI 2.0.1）               │
-│      DeepSeek（原生ChatModel）· Qwen（OpenAI兼容）·            │
-│      智谱（OpenAI兼容）· 统一Provider抽象                       │
+│                    AI模型适配层（自有 Provider SPI）             │
+│      DeepSeek（OpenAI兼容）· OpenAI（Chat Completions）·        │
+│      Stub（本地测试）· 统一Provider抽象                          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -85,7 +85,7 @@
 
 ### 3.2 架构设计原则
 
-1. **模型中立**：基于Spring AI 2.0.1的`ChatModel`抽象构建统一Provider层，切换底层模型只需修改配置
+1. **模型中立**：基于项目自有`ModelProvider`接口构建统一Provider层，保留消息、流式增量、usage与错误语义
 2. **可插拔**：策略链基于责任链模式 + ProcessorRegistry，支持运行时动态编排
 3. **高可用**：熔断降级、多级缓存、异步解耦，确保核心链路可用性
 4. **可观测**：全链路Trace + 业务指标监控 + Token消耗追踪
@@ -206,7 +206,7 @@ CREATE INDEX idx_cache_vector ON cache_embeddings USING HNSW (embedding vector_c
 
 **技术实现**：
 - 使用**pgvector**（PostgreSQL向量扩展）存储问题向量
-- 通过**Spring AI的VectorStore**抽象统一向量操作
+- 通过项目自有`SemanticCacheStore`接口统一向量存储操作
 - 支持按租户、按场景独立配置缓存策略（TTL、相似度阈值）
 
 ### 4.5 流式输出（SSE）场景下的Token计费
@@ -239,7 +239,7 @@ CREATE INDEX idx_cache_vector ON cache_embeddings USING HNSW (embedding vector_c
 | **核心框架** | Spring Boot | 4.1.1 | 核心框架 |
 | **微服务** | Spring Cloud | 2025.1.2+ (Oakwood) | 服务治理、配置中心 |
 | **API网关** | Spring Cloud Gateway | 5.0.3（Cloud BOM管理） | 流量入口 |
-| **AI集成** | Spring AI | 2.0.1 | 统一模型调用抽象、VectorStore |
+| **AI集成** | 自有 Provider SPI + JDK HttpClient | — | 统一模型调用、流式透传与错误归一化 |
 | **缓存** | Caffeine（本地）+ Redis（分布式） | — | 多级缓存 |
 | **向量数据库** | PostgreSQL + pgvector | 16 + pgvector | 语义缓存向量存储 |
 | **消息队列** | Kafka | KRaft模式 | 异步扣费、统计 |
@@ -284,9 +284,9 @@ lingshu/
             │   └── UsageCollectorProcessor
             ├── provider/             // ModelProvider抽象
             │   ├── ModelProvider.java
-            │   ├── DeepSeekProvider   // spring-ai-starter-model-deepseek
-            │   ├── QwenProvider       // OpenAiChatModel + 阿里云OpenAI兼容端点
-            │   └── ZhipuProvider      // OpenAiChatModel + 智谱OpenAI兼容端点
+            │   ├── DeepSeekModelProvider // DeepSeek OpenAI兼容端点
+            │   ├── OpenAiModelProvider   // OpenAI Chat Completions端点
+            │   └── StubModelProvider     // 无密钥本地测试
             ├── routing/              // ModelRouter接口 + 实现
             │   ├── ModelRouter.java
             │   ├── RuleBasedRouter
@@ -321,7 +321,7 @@ Trace    Router     ProviderInvoke
 
 ## 七、Provider接入方案
 
-**关键设计**：Spring AI 2.0.1 官方提供了 DeepSeek 原生 `ChatModel` starter；Qwen 官方提供 OpenAI-compatible Chat API；智谱同样官方提供 OpenAI API 兼容接口。
+**关键设计**：项目通过自有 Provider SPI 隔离路由与供应商协议，并以 JDK HTTP 客户端实现 DeepSeek/OpenAI Chat Completions 适配器，避免声明未实际使用的框架依赖。
 
 ```java
 public interface ModelProvider {
@@ -330,12 +330,12 @@ public interface ModelProvider {
     ProviderHealth health();
 }
 
-// DeepSeek：使用原生 DeepSeekChatModel
-// Qwen：使用 OpenAiChatModel + 阿里云 OpenAI-compatible endpoint
-// Zhipu：使用 OpenAiChatModel + 智谱 OpenAI-compatible endpoint
+// DeepSeek: OpenAI-compatible HTTP and SSE adapter
+// OpenAI: Chat Completions HTTP and SSE adapter
+// Stub: deterministic local test provider
 ```
 
-**ModelRouter 完全不需要知道底层是 `DeepSeekChatModel` 还是 `OpenAiChatModel`**，这才是真正的Provider abstraction。
+**ModelRouter 不依赖供应商客户端实现**，只消费统一的 Provider 能力、健康、延迟和负载信息。
 
 
 ## 八、实施路线图
@@ -436,10 +436,10 @@ status=SUCCESS
 | Java版本 | Java 21 | 虚拟线程正式特性（JEP 444），契合2026年新项目身份 |
 | Spring Boot | 4.1.1 | 当前最新稳定版 |
 | Spring Cloud | 2025.1.2 (Oakwood) | 支持Spring Boot 4.0.x及4.1.x |
-| Spring AI | 2.0.1 | 当前最新稳定版，ChatModel/VectorStore API成熟 |
+| Provider SPI | 自有接口 | 保留协议语义，便于独立演进路由、流式和错误模型 |
 | Gateway vs Core分离 | 拆分两个应用 | Gateway负责网络层（WebFlux），Core负责业务逻辑（MVC），避免在Event Loop中执行同步LLM调用 |
 | Processor热插拔 | ProcessorRegistry + Nacos | `@ConditionalOnProperty`仅适合Bean创建阶段，运行时动态编排应使用注册表模式 |
-| Provider接入 | DeepSeek原生 + Qwen/智谱OpenAI兼容 | Spring AI 2.0.1有DeepSeek starter；Qwen和智谱提供OpenAI兼容端点 |
+| Provider接入 | DeepSeek + OpenAI + Stub | 自有 HTTP/SSE 适配器，默认测试无需真实 API Key |
 
 ---
 

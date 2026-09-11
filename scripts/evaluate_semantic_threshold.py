@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import os
 import urllib.request
 from pathlib import Path
 
@@ -33,15 +34,16 @@ def cosine(left: list[float], right: list[float]) -> float:
 
 
 def main() -> None:
+    data_root = Path(os.environ.get("LINGSHU_DATA_ROOT", r"E:\LingShuData"))
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", default="http://127.0.0.1:8090/embed")
     parser.add_argument(
         "--dataset",
-        default=r"E:\LingShuData\datasets\semantic-eval-samples.jsonl",
+        default=data_root / "datasets" / "semantic-eval-samples.jsonl",
     )
     parser.add_argument(
         "--report",
-        default=r"E:\LingShuData\logs\semantic-threshold-report.txt",
+        default=data_root / "logs" / "semantic-threshold-report.txt",
     )
     args = parser.parse_args()
 

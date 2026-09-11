@@ -27,13 +27,13 @@
 冷缓存：
 
 ```powershell
-D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev D:\anaconda\envs\lingshu-dev\python.exe scripts\load-test.py --requests 200 --concurrency 20 --prompt-cardinality 200 --stream-ratio 0.5 --warmup-requests 20 --tenant-prefix perf-cold-v3 --run-id baseline-cold-v3-20260911
+.\scripts\python.ps1 .\scripts\load-test.py --requests 200 --concurrency 20 --prompt-cardinality 200 --stream-ratio 0.5 --warmup-requests 20 --tenant-prefix perf-cold-v3 --run-id baseline-cold-v3-20260911
 ```
 
 热缓存：
 
 ```powershell
-D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev D:\anaconda\envs\lingshu-dev\python.exe scripts\load-test.py --requests 200 --concurrency 20 --prompt-cardinality 20 --stream-ratio 0.5 --warmup-requests 20 --tenant-prefix perf-warm-v3 --run-id baseline-warm-v3-20260911 --warm-cache
+.\scripts\python.ps1 .\scripts\load-test.py --requests 200 --concurrency 20 --prompt-cardinality 20 --stream-ratio 0.5 --warmup-requests 20 --tenant-prefix perf-warm-v3 --run-id baseline-warm-v3-20260911 --warm-cache
 ```
 
 ## 指标与看板

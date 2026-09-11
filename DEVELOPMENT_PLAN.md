@@ -14,7 +14,7 @@
 ### 阶段 0：工程基线
 
 - 创建父 POM 和三个 Maven 模块。
-- 固定 Java、Spring Boot、Spring Cloud、Spring AI 版本。
+- 固定 Java、Spring Boot、Spring Cloud 版本；模型调用使用项目自有 Provider SPI，不声明未使用的 Spring AI 依赖。
 - 建立格式检查、单元测试、错误契约和配置分层。
 - 建立 Stub Provider 与集成测试基线。
 
@@ -36,7 +36,7 @@
 - 精确缓存进度：内存与 Redis 两种存储已实现；Redis 使用 TTL、故障开放策略和租户隔离键。
 - 语义缓存：PostgreSQL 16 + pgvector，使用元数据过滤和相似度阈值。
 - 语义缓存进度：pgvector 存储、TTL、租户/模型/采样参数隔离和开发桩嵌入器已实现。
-- 已绑定本地 Qwen3-Embedding-4B（BF16，2560 维）和 Hugging Face TEI CUDA 服务；模型目录固定为 `E:\LingShuData\models\Qwen3-Embedding-4B`，服务监听 `127.0.0.1:8090`。
+- 已绑定本地 Qwen3-Embedding-4B（BF16，2560 维）和 Hugging Face TEI CUDA 服务；模型目录为 `${LINGSHU_DATA_ROOT}/models/Qwen3-Embedding-4B`（当前工作站默认 `E:\LingShuData`），服务监听 `127.0.0.1:8090`。
 - 已实现 OpenAI 兼容 Embeddings HTTP 适配器和 TEI `/embed` 适配器，包含超时/维度校验和故障开放；不需要真实 API Key。
 - 已完成 DeepSeek 真实请求验收：`deepseek-v4flash` 配置经兼容转换后返回 HTTP 200；本地 Qwen 嵌入、pgvector 语义缓存与 Gateway 路由均已联通。
 - 已完成 2560 维语义缓存迁移：新表使用 `halfvec(2560)`，建立 HNSW 余弦索引；旧的混合维度表保留作回退，不参与新模型查询。
@@ -48,7 +48,7 @@
 
 当前进度：阶段 0、阶段 1、阶段 2 和阶段 3 已完成；阶段 4 已进入开发，已打通内存、PostgreSQL 和 Nacos 三种租户策略源、运行时策略更新、租户级 PII/缓存/模型控制、内存与 Redis 分布式限流，以及带租户标签的 Micrometer 请求、延迟、Token、费用和失败指标。
 
-阶段 3 进展：Redis Lua 预扣/确认/释放、PostgreSQL `lingshu_budget_ledger` 账本、带认领机制的 `lingshu_budget_outbox`、reservation 幂等状态转换、虚拟计费 Processor、PostgreSQL 虚拟租户账户/用量表、余额与用量查询、Kafka 发布器、Outbox Relay、幂等消费表和超时回收扫描器已完成。Kafka Compose 服务已绑定 `E:\LingShuData\kafka` 并启动；真实预算与 Kafka Relay 默认关闭，避免开发环境误启用真实预算扣减。
+阶段 3 进展：Redis Lua 预扣/确认/释放、PostgreSQL `lingshu_budget_ledger` 账本、带认领机制的 `lingshu_budget_outbox`、reservation 幂等状态转换、虚拟计费 Processor、PostgreSQL 虚拟租户账户/用量表、余额与用量查询、Kafka 发布器、Outbox Relay、幂等消费表和超时回收扫描器已完成。Kafka Compose 服务绑定 `${LINGSHU_DATA_ROOT}/kafka`；真实预算与 Kafka Relay 默认关闭，避免开发环境误启用真实预算扣减。
 
 开发计费进展：已加入本地虚拟账本，每租户默认 CNY 10.00；按 provider 返回的输入/输出 token 计算费用，缓存命中不计费；失败响应若携带 usage 也计费，无 usage 时记录 0。虚拟账本不调用外部扣款接口，也不影响 DeepSeek API 配额。
 
@@ -97,6 +97,6 @@
 
 - 代码仓库只保存小型、可公开、可复现的测试夹具。
 - 真实 API Key 不落盘、不提交。
-- 模型、数据集、压测语料、数据库持久化文件和大日志统一放到 `E:\LingShuData` 的对应子目录。
+- 模型、数据集、压测语料、数据库持久化文件和大日志统一放到 `LINGSHU_DATA_ROOT` 的对应子目录；当前工作站默认使用 `E:\LingShuData`。
 - `D:\Docker` 仅为 Docker 安装位置，不作为项目数据目录。
 - LingShu PostgreSQL 与 Redis 分别使用本机端口 `54320` 和 `63790`，避免影响已有容器。

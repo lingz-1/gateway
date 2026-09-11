@@ -10,7 +10,7 @@ The repository also includes `lingshu-web`, a React and TypeScript user console 
 
 ## Development environment
 
-The required Conda environment is `lingshu-dev` at `D:\anaconda\envs\lingshu-dev`.
+The required Conda environment is named `lingshu-dev`. The PowerShell wrappers accept an explicit `LINGSHU_CONDA_EXE`, recognize the existing `D:\anaconda` workstation layout, and otherwise discover `conda` from `PATH`.
 
 Run the full verification build from PowerShell:
 
@@ -18,7 +18,7 @@ Run the full verification build from PowerShell:
 .\scripts\mvn.ps1 verify
 ```
 
-The helper script always uses the project Conda environment and stores Maven dependencies on drive D.
+The helper script always uses the project Conda environment and stores Maven dependencies inside that environment. Set `LINGSHU_MAVEN_REPOSITORY` to override the cache directory.
 
 ## Local applications
 
@@ -48,18 +48,18 @@ Run the frontend unit tests and production build with the environment-bound npm 
 With all three applications running, exercise the real browser flow in headless Microsoft Edge. The test sends streaming requests, verifies an exact-cache hit, checks the mobile drawers, and saves screenshots under the ignored `lingshu-web/test-results` directory:
 
 ```powershell
-D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev python .\scripts\test-web-e2e.py
+.\scripts\python.ps1 .\scripts\test-web-e2e.py
 ```
 
 Run the dependency-free mixed streaming/non-streaming load test against Gateway:
 
 ```powershell
-D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev D:\anaconda\envs\lingshu-dev\python.exe scripts\load-test.py --requests 200 --concurrency 20 --prompt-cardinality 200 --stream-ratio 0.5
+.\scripts\python.ps1 .\scripts\load-test.py --requests 200 --concurrency 20 --prompt-cardinality 200 --stream-ratio 0.5
 ```
 
 Add `--warm-cache` and use a smaller prompt cardinality for an exact-cache baseline. The script reports throughput, latency P50/P95/P99, streaming TTFT P50/P95/P99, HTTP status codes, errors, and cache-result counts. The first recorded local baseline is documented in [`docs/performance-baseline.md`](docs/performance-baseline.md).
 
-To start the production-like local infrastructure and Qwen embedding profile, add `-FullInfrastructure`. This requires `.env`, Docker, and the model under `E:\LingShuData\models\Qwen3-Embedding-4B`:
+To start the production-like local infrastructure and Qwen embedding profile, add `-FullInfrastructure`. This requires `.env`, Docker, and the model under `${LINGSHU_DATA_ROOT}/models/Qwen3-Embedding-4B`. The checked-in example defaults `LINGSHU_DATA_ROOT` to `E:\LingShuData`, but another absolute data directory may be supplied locally:
 
 ```powershell
 .\scripts\start-local.ps1 -Build -FullInfrastructure
@@ -155,7 +155,7 @@ Evaluate the local semantic-cache threshold with the checked-in Chinese sample s
 .\scripts\evaluate-semantic-threshold.ps1
 ```
 
-The wrapper always invokes `lingshu-dev`; the dataset and report default to `E:\LingShuData\datasets` and `E:\LingShuData\logs`.
+The wrapper always invokes `lingshu-dev`; the dataset and report default to the `datasets` and `logs` directories below `LINGSHU_DATA_ROOT`.
 
 API key authentication is disabled by default. Enable it with `LINGSHU_GATEWAY_API_KEY_ENABLED=true` and provide the key through `LINGSHU_GATEWAY_API_KEY`. No external API key or infrastructure service is required for the verification build.
 
@@ -196,7 +196,7 @@ Protect these internal endpoints outside local development by enabling `LINGSHU_
 
 ## Local infrastructure
 
-Redis and PostgreSQL/pgvector are isolated under the `lingshu` Compose project. Their persistent data is bind-mounted to `E:\LingShuData`; the Docker installation directory is not used as project storage.
+Redis and PostgreSQL/pgvector are isolated under the `lingshu` Compose project. Their persistent data is bind-mounted below `LINGSHU_DATA_ROOT`; `.env.example` uses `E:\LingShuData` for this workstation, but the repository does not require Docker itself to be installed on a specific drive. `infra.ps1` discovers `docker` from `PATH`, with `LINGSHU_DOCKER_COMPOSE_EXE` available for a standalone Compose executable.
 
 ```powershell
 .\scripts\infra.ps1 pull
@@ -226,5 +226,5 @@ Run the frontend unit tests and production build through the project environment
 With all three local applications running, execute the Edge/Playwright browser smoke test. It sends a streaming request, repeats it in a new conversation, verifies an exact-cache hit, and writes an ignored screenshot under `lingshu-web/test-results`:
 
 ```powershell
-D:\anaconda\Scripts\conda.exe run --no-capture-output -n lingshu-dev python .\scripts\test-web-e2e.py
+.\scripts\python.ps1 .\scripts\test-web-e2e.py
 ```
