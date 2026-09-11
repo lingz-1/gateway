@@ -47,7 +47,9 @@ public class ProviderInvokeProcessor implements ChatProcessor {
                 context.request().top_p(),
                 context.request().seed(),
                 context.request().frequency_penalty(),
-                context.request().presence_penalty()
+                context.request().presence_penalty(),
+                context.request().tools(),
+                context.request().tool_choice()
         );
         List<ModelProvider> candidates = context.providerCandidates().isEmpty()
                 ? List.of(context.provider())
@@ -119,7 +121,8 @@ public class ProviderInvokeProcessor implements ChatProcessor {
                 response.content(),
                 response.inputTokens() + failedInputTokens,
                 response.outputTokens() + failedOutputTokens,
-                response.finishReason()
+                response.finishReason(),
+                response.toolCalls()
         );
     }
 }

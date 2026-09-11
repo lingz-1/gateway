@@ -127,6 +127,9 @@ public class SemanticCacheService {
     }
 
     private String lengthPrefixed(String value) {
+        if (value == null) {
+            return "-1:";
+        }
         return value.length() + ":" + value;
     }
 

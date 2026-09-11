@@ -1,6 +1,7 @@
 package com.lingshu.core.processing;
 
 import com.lingshu.common.dto.CacheStatus;
+import com.lingshu.core.cache.CacheEligibility;
 import com.lingshu.core.cache.SemanticCacheService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,7 @@ public class SemanticCacheWriteProcessor implements ChatProcessor {
     @Override
     public boolean shouldProcess(ChatProcessingContext context) {
         return cacheService.isEnabled()
+                && CacheEligibility.isCacheable(context.request())
                 && (context.tenantPolicy() == null || context.tenantPolicy().semanticCacheEnabled())
                 && context.cacheStatus() == CacheStatus.MISS
                 && context.completed()

@@ -23,6 +23,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -156,7 +157,9 @@ public class StreamingChatCompletionService {
                 context.request().top_p(),
                 context.request().seed(),
                 context.request().frequency_penalty(),
-                context.request().presence_penalty()
+                context.request().presence_penalty(),
+                context.request().tools(),
+                context.request().tool_choice()
         );
         List<ModelProvider> candidates = context.providerCandidates().isEmpty()
                 ? List.of(context.provider())
@@ -178,6 +181,27 @@ public class StreamingChatCompletionService {
                         }
                         sendDelta(emitter, cancelled, responseId, created,
                                 context.request().model(), delta);
+                        if (emitted.compareAndSet(false, true)) {
+                            metrics.timeToFirstToken(
+                                    context.tenantId(),
+                                    candidate.id(),
+                                    context.request().model(),
+                                    context.cacheStatus(),
+                                    System.nanoTime() - requestStartedAt
+                            );
+                        }
+                    }
+
+                    @Override
+                    public void onToolCallDelta(
+                            int index,
+                            String id,
+                            String type,
+                            String name,
+                            String arguments
+                    ) throws IOException {
+                        sendToolCallDelta(emitter, cancelled, responseId, created,
+                                context.request().model(), index, id, type, name, arguments);
                         if (emitted.compareAndSet(false, true)) {
                             metrics.timeToFirstToken(
                                     context.tenantId(),
@@ -309,6 +333,57 @@ public class StreamingChatCompletionService {
         )));
     }
 
+    private void sendToolCallDelta(
+            SseEmitter emitter,
+            AtomicBoolean cancelled,
+            String responseId,
+            long created,
+            String model,
+            int index,
+            String id,
+            String type,
+            String name,
+            String arguments
+    ) throws IOException {
+        if (cancelled.get()) {
+            throw cancelledException(null);
+        }
+        Map<String, Object> function = new LinkedHashMap<>();
+        if (name != null) {
+            function.put("name", name);
+        }
+        if (arguments != null) {
+            function.put("arguments", arguments);
+        }
+        Map<String, Object> toolCall = new LinkedHashMap<>();
+        toolCall.put("index", index);
+        if (id != null) {
+            toolCall.put("id", id);
+        }
+        if (type != null) {
+            toolCall.put("type", type);
+        }
+        if (!function.isEmpty()) {
+            toolCall.put("function", function);
+        }
+        try {
+            emitter.send(SseEmitter.event().data(Map.of(
+                    "id", responseId,
+                    "object", "chat.completion.chunk",
+                    "created", created,
+                    "model", model,
+                    "choices", List.of(Map.of(
+                            "index", 0,
+                            "delta", Map.of("tool_calls", List.of(toolCall)),
+                            "finish_reason", ""
+                    ))
+            )));
+        } catch (IOException exception) {
+            cancelled.set(true);
+            throw cancelledException(exception);
+        }
+    }
+
     private ProviderResponse withFailedUsage(
             ProviderResponse response,
             int failedInputTokens,
@@ -323,7 +398,8 @@ public class StreamingChatCompletionService {
                 response.content(),
                 response.inputTokens() + failedInputTokens,
                 response.outputTokens() + failedOutputTokens,
-                response.finishReason()
+                response.finishReason(),
+                response.toolCalls()
         );
     }
 

@@ -14,7 +14,9 @@ public record ProviderRequest(
         Double topP,
         Long seed,
         Double frequencyPenalty,
-        Double presencePenalty
+        Double presencePenalty,
+        List<ChatTool> tools,
+        Object toolChoice
 ) {
     public ProviderRequest(
             String traceId,
@@ -25,7 +27,24 @@ public record ProviderRequest(
             Integer maxTokens,
             Double topP
     ) {
-        this(traceId, tenantId, requestedModel, messages, temperature, maxTokens, topP, null, null, null);
+        this(traceId, tenantId, requestedModel, messages, temperature, maxTokens, topP,
+                null, null, null, null, null);
+    }
+
+    public ProviderRequest(
+            String traceId,
+            String tenantId,
+            String requestedModel,
+            List<ChatMessage> messages,
+            Double temperature,
+            Integer maxTokens,
+            Double topP,
+            Long seed,
+            Double frequencyPenalty,
+            Double presencePenalty
+    ) {
+        this(traceId, tenantId, requestedModel, messages, temperature, maxTokens, topP,
+                seed, frequencyPenalty, presencePenalty, null, null);
     }
 
     public ProviderRequest {
@@ -37,6 +56,9 @@ public record ProviderRequest(
             throw new IllegalArgumentException("messages must not be empty");
         }
         messages = List.copyOf(messages);
+        if (tools != null) {
+            tools = List.copyOf(tools);
+        }
         if (temperature != null && (temperature < 0.0 || temperature > 2.0)) {
             throw new IllegalArgumentException("temperature must be between 0 and 2");
         }
@@ -55,8 +77,21 @@ public record ProviderRequest(
     }
 
     public String prompt() {
-        return messages.stream()
-                .map(message -> message.role() + ":" + message.content())
-                .collect(Collectors.joining("\n"));
+        return messages.stream().map(message -> {
+            StringBuilder value = new StringBuilder(message.role()).append(':');
+            if (message.content() != null) {
+                value.append(message.content());
+            }
+            if (message.tool_call_id() != null) {
+                value.append("|tool_call_id=").append(message.tool_call_id());
+            }
+            if (message.tool_calls() != null) {
+                message.tool_calls().forEach(call -> value
+                        .append("|tool_call=").append(call.id())
+                        .append(':').append(call.function().name())
+                        .append(':').append(call.function().arguments()));
+            }
+            return value.toString();
+        }).collect(Collectors.joining("\n"));
     }
 }

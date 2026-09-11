@@ -134,6 +134,23 @@ class ChatCompletionIntegrationTest {
     }
 
     @Test
+    void rejectsMessagesWithInvalidToolContext() throws Exception {
+        HttpResponse<String> assistantWithoutPayload = postRaw(
+                "{\"model\":\"stub-echo-v1\",\"messages\":[{\"role\":\"assistant\",\"content\":null}]}",
+                "trace-invalid-assistant"
+        );
+        HttpResponse<String> toolWithoutCallId = postRaw(
+                "{\"model\":\"stub-echo-v1\",\"messages\":[{\"role\":\"tool\",\"content\":\"result\"}]}",
+                "trace-invalid-tool"
+        );
+
+        assertEquals(400, assistantWithoutPayload.statusCode());
+        assertTrue(assistantWithoutPayload.body().contains("INVALID_REQUEST"));
+        assertEquals(400, toolWithoutCallId.statusCode());
+        assertTrue(toolWithoutCallId.body().contains("INVALID_REQUEST"));
+    }
+
+    @Test
     void returnsProviderErrorForUnknownModel() throws Exception {
         HttpResponse<String> response = post("unknown-model", "trace-unknown");
 
@@ -178,6 +195,25 @@ class ChatCompletionIntegrationTest {
         assertTrue(second.body().contains("\"providerAttempts\":[]"));
         assertTrue(second.body().contains("prompt_tokens"));
         assertTrue(second.body().contains("[DONE]"));
+    }
+
+    @Test
+    void acceptsToolContractAndBypassesCaches() throws Exception {
+        String body = "{\"model\":\"stub-echo-v1\","
+                + "\"messages\":[{\"role\":\"user\",\"content\":\"weather?\"}],"
+                + "\"tools\":[{\"type\":\"function\",\"function\":{"
+                + "\"name\":\"get_weather\",\"description\":\"Get weather\","
+                + "\"parameters\":{\"type\":\"object\"}}}],\"tool_choice\":\"auto\"}";
+
+        HttpResponse<String> first = postRaw(body, "trace-tool-first");
+        HttpResponse<String> second = postRaw(body, "trace-tool-second");
+
+        assertEquals(200, first.statusCode());
+        assertEquals(200, second.statusCode());
+        assertTrue(first.body().contains("\"cacheStatus\":\"MISS\""));
+        assertTrue(second.body().contains("\"cacheStatus\":\"MISS\""));
+        assertFalse(second.body().contains("\"name\":\"exact-cache-lookup\""));
+        assertFalse(second.body().contains("\"name\":\"semantic-cache-lookup\""));
     }
 
     @Test

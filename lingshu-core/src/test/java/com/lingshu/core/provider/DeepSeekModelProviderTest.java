@@ -1,6 +1,9 @@
 package com.lingshu.core.provider;
 
 import com.lingshu.common.dto.ChatMessage;
+import com.lingshu.common.dto.ChatFunctionCall;
+import com.lingshu.common.dto.ChatFunctionDefinition;
+import com.lingshu.common.dto.ChatTool;
 import com.lingshu.common.dto.ProviderRequest;
 import com.lingshu.common.dto.ProviderResponse;
 import com.lingshu.core.config.LingShuProperties;
@@ -17,6 +20,7 @@ import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -133,6 +137,85 @@ class DeepSeekModelProviderTest {
     }
 
     @Test
+    void forwardsToolsAndParsesToolCallResponse() throws Exception {
+        responseBody.set("{\"choices\":[{\"message\":{\"content\":null,\"tool_calls\":[{"
+                + "\"id\":\"call-1\",\"type\":\"function\",\"function\":{"
+                + "\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Beijing\\\"}\"}}]},"
+                + "\"finish_reason\":\"tool_calls\"}],"
+                + "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}");
+        ProviderRequest toolRequest = new ProviderRequest(
+                "trace-tools",
+                "tenant-1",
+                "deepseek-v4flash",
+                List.of(new ChatMessage("user", "weather?")),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(new ChatTool(
+                        "function",
+                        new ChatFunctionDefinition(
+                                "get_weather",
+                                "Get weather",
+                                Map.of("type", "object"),
+                                true
+                        )
+                )),
+                "auto"
+        );
+
+        ProviderResponse response = provider().invoke(toolRequest);
+
+        assertEquals(null, response.content());
+        assertEquals("tool_calls", response.finishReason());
+        assertEquals("call-1", response.toolCalls().getFirst().id());
+        assertEquals("get_weather", response.toolCalls().getFirst().function().name());
+        JsonNode request = objectMapper.readTree(requestBody.get());
+        assertEquals("get_weather", request.path("tools").get(0).path("function").path("name").asText());
+        assertEquals("auto", request.path("tool_choice").asText());
+    }
+
+    @Test
+    void streamsAndAssemblesToolCallDeltas() {
+        responseBody.set("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,"
+                + "\"id\":\"call-1\",\"type\":\"function\",\"function\":{"
+                + "\"name\":\"get_weather\",\"arguments\":\"{\"}}]}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,"
+                + "\"function\":{\"arguments\":\"\\\"city\\\":\\\"Beijing\\\"}\"}}]},"
+                + "\"finish_reason\":\"tool_calls\"}],"
+                + "\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5}}\n\n"
+                + "data: [DONE]\n\n");
+        List<String> fragments = new CopyOnWriteArrayList<>();
+
+        ProviderResponse response = provider().stream(request("trace-stream-tools"), new ProviderStreamConsumer() {
+            @Override
+            public void onDelta(String content) {
+            }
+
+            @Override
+            public void onToolCallDelta(
+                    int index,
+                    String id,
+                    String type,
+                    String name,
+                    String arguments
+            ) {
+                if (arguments != null) {
+                    fragments.add(arguments);
+                }
+            }
+        });
+
+        assertEquals(List.of("{", "\"city\":\"Beijing\"}"), fragments);
+        assertEquals("{\"city\":\"Beijing\"}",
+                response.toolCalls().getFirst().function().arguments());
+        assertEquals("tool_calls", response.finishReason());
+        assertEquals(null, response.content());
+    }
+
+    @Test
     void estimatesStreamingUsageWhenProviderOmitsUsage() {
         responseBody.set("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},"
                 + "\"finish_reason\":\"stop\"}]}\n\n"
@@ -211,7 +294,7 @@ class DeepSeekModelProviderTest {
                 )
         );
 
-        assertTrue(exception.getMessage().contains("does not contain text content"));
+        assertTrue(exception.getMessage().contains("does not contain content or tool calls"));
     }
 
     @Test

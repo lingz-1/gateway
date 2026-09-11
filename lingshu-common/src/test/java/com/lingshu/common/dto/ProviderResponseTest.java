@@ -2,6 +2,8 @@ package com.lingshu.common.dto;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ProviderResponseTest {
@@ -32,5 +34,25 @@ class ProviderResponseTest {
         );
 
         assertEquals("stop", response.finishReason());
+    }
+
+    @Test
+    void acceptsToolCallWithoutTextContent() {
+        ProviderResponse response = new ProviderResponse(
+                "openai",
+                "logical-model",
+                null,
+                10,
+                5,
+                "tool_calls",
+                List.of(new ChatToolCall(
+                        "call-1",
+                        "function",
+                        new ChatFunctionCall("get_weather", "{\"city\":\"Beijing\"}")
+                ))
+        );
+
+        assertEquals("tool_calls", response.finishReason());
+        assertEquals("get_weather", response.toolCalls().getFirst().function().name());
     }
 }

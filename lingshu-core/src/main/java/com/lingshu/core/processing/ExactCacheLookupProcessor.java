@@ -1,6 +1,7 @@
 package com.lingshu.core.processing;
 
 import com.lingshu.common.dto.CacheStatus;
+import com.lingshu.core.cache.CacheEligibility;
 import com.lingshu.core.cache.ExactCacheService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -22,7 +23,8 @@ public class ExactCacheLookupProcessor implements ChatProcessor {
 
     @Override
     public boolean shouldProcess(ChatProcessingContext context) {
-        return context.tenantPolicy() == null || context.tenantPolicy().exactCacheEnabled();
+        return CacheEligibility.isCacheable(context.request())
+                && (context.tenantPolicy() == null || context.tenantPolicy().exactCacheEnabled());
     }
 
     @Override

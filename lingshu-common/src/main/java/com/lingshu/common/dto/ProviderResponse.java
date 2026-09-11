@@ -1,5 +1,6 @@
 package com.lingshu.common.dto;
 
+import java.util.List;
 import java.util.Objects;
 
 public record ProviderResponse(
@@ -8,12 +9,16 @@ public record ProviderResponse(
         String content,
         int inputTokens,
         int outputTokens,
-        String finishReason
+        String finishReason,
+        List<ChatToolCall> toolCalls
 ) {
     public ProviderResponse {
         Objects.requireNonNull(provider, "provider must not be null");
         Objects.requireNonNull(model, "model must not be null");
-        Objects.requireNonNull(content, "content must not be null");
+        if ((content == null || content.isBlank()) && (toolCalls == null || toolCalls.isEmpty())) {
+            throw new IllegalArgumentException("content or toolCalls must be present");
+        }
+        toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
         if (inputTokens < 0 || outputTokens < 0) {
             throw new IllegalArgumentException("token counts must not be negative");
         }
@@ -27,8 +32,19 @@ public record ProviderResponse(
             String model,
             String content,
             int inputTokens,
+            int outputTokens,
+            String finishReason
+    ) {
+        this(provider, model, content, inputTokens, outputTokens, finishReason, List.of());
+    }
+
+    public ProviderResponse(
+            String provider,
+            String model,
+            String content,
+            int inputTokens,
             int outputTokens
     ) {
-        this(provider, model, content, inputTokens, outputTokens, "stop");
+        this(provider, model, content, inputTokens, outputTokens, "stop", List.of());
     }
 }

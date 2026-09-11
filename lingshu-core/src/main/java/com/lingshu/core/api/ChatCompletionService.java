@@ -107,7 +107,7 @@ public class ChatCompletionService {
         );
         ChatCompletionResponse.Choice choice = new ChatCompletionResponse.Choice(
                 0,
-                new ChatMessage("assistant", providerResponse.content()),
+                new ChatMessage("assistant", providerResponse.content(), null, null, providerResponse.toolCalls()),
                 providerResponse.finishReason()
         );
         ChatCompletionResponse.Metadata metadata = new ChatCompletionResponse.Metadata(

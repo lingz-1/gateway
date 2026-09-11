@@ -30,7 +30,13 @@ public class PiiRedactionProcessor implements ChatProcessor {
     public void process(ChatProcessingContext context) {
         ChatCompletionRequest request = context.request();
         List<ChatMessage> redacted = request.messages().stream()
-                .map(message -> new ChatMessage(message.role(), redact(message.content())))
+                .map(message -> new ChatMessage(
+                        message.role(),
+                        message.content() == null ? null : redact(message.content()),
+                        message.name(),
+                        message.tool_call_id(),
+                        message.tool_calls()
+                ))
                 .toList();
         context.request(new ChatCompletionRequest(
                 request.model(),
@@ -41,7 +47,9 @@ public class PiiRedactionProcessor implements ChatProcessor {
                 request.top_p(),
                 request.seed(),
                 request.frequency_penalty(),
-                request.presence_penalty()
+                request.presence_penalty(),
+                request.tools(),
+                request.tool_choice()
         ));
     }
 

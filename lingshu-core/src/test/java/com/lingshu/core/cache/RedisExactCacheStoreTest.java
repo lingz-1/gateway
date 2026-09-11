@@ -36,7 +36,7 @@ class RedisExactCacheStoreTest {
         store.put("hash", response);
         verify(values).set(
                 RedisExactCacheStore.KEY_PREFIX + "hash",
-                "{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1,\"finishReason\":\"length\"}",
+                "{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1,\"finishReason\":\"length\",\"toolCalls\":[]}",
                 Duration.ofMinutes(3)
         );
 

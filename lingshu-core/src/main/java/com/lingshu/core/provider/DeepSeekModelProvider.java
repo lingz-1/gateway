@@ -2,6 +2,9 @@ package com.lingshu.core.provider;
 
 import com.lingshu.common.dto.ProviderRequest;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.ChatFunctionCall;
+import com.lingshu.common.dto.ChatMessage;
+import com.lingshu.common.dto.ChatToolCall;
 import com.lingshu.core.config.LingShuProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,9 +23,12 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -145,7 +151,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                     int priorOutput = accumulatedOutputTokens - parsed.outputTokens();
                     return new ProviderResponse(parsed.provider(), parsed.model(), parsed.content(),
                             parsed.inputTokens() + priorInput, parsed.outputTokens() + priorOutput,
-                            parsed.finishReason());
+                            parsed.finishReason(), parsed.toolCalls());
                 }
                 if (isRetryable(response.statusCode()) && attempt < maxAttempts) {
                     pauseBeforeRetry(attempt);
@@ -230,7 +236,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                         throw new ProviderUsageException(
                                 exception.getMessage(),
                                 accumulatedInputTokens + estimateTokens(request.prompt()),
-                                accumulatedOutputTokens + estimateTokens(stream.content.toString())
+                                accumulatedOutputTokens + estimateTokens(stream.generatedText())
                         );
                     } catch (IOException exception) {
                         if (consumer.isCancelled()) {
@@ -252,20 +258,21 @@ public class DeepSeekModelProvider implements ModelProvider {
                         );
                     }
                     registerSuccess();
-                    String content = stream.content.toString();
+                    String content = stream.content.isEmpty() ? null : stream.content.toString();
                     int inputTokens = stream.usageReported
                             ? stream.inputTokens
                             : estimateTokens(request.prompt());
                     int outputTokens = stream.usageReported
                             ? stream.outputTokens
-                            : estimateTokens(content);
+                            : estimateTokens(stream.generatedText());
                     return new ProviderResponse(
                             providerId,
                             model,
                             content,
                             inputTokens + accumulatedInputTokens,
                             outputTokens + accumulatedOutputTokens,
-                            stream.finishReason
+                            stream.finishReason,
+                            stream.toolCalls()
                     );
                 }
             }
@@ -301,31 +308,54 @@ public class DeepSeekModelProvider implements ModelProvider {
         if (!choices.isArray() || choices.isEmpty()) {
             throw new IllegalStateException(providerId + " response does not contain choices");
         }
-        JsonNode content = choices.get(0).path("message").path("content");
-        if (!content.isTextual()) {
-            throw new IllegalStateException(providerId + " response does not contain text content");
+        JsonNode message = choices.get(0).path("message");
+        JsonNode content = message.path("content");
+        List<ChatToolCall> toolCalls = parseToolCalls(message.path("tool_calls"));
+        if (!content.isTextual() && toolCalls.isEmpty()) {
+            throw new IllegalStateException(providerId + " response does not contain content or tool calls");
         }
         JsonNode finishReason = choices.get(0).path("finish_reason");
         int[] usageTokens = parseUsage(root);
         return new ProviderResponse(
                 providerId,
                 model,
-                content.asText(),
+                content.isTextual() ? content.asText() : null,
                 usageTokens[0],
                 usageTokens[1],
-                finishReason.isTextual() ? finishReason.asText() : "stop"
+                finishReason.isTextual() ? finishReason.asText() : "stop",
+                toolCalls
         );
+    }
+
+    private List<ChatToolCall> parseToolCalls(JsonNode node) {
+        if (!node.isArray()) {
+            return List.of();
+        }
+        List<ChatToolCall> toolCalls = new ArrayList<>();
+        for (JsonNode item : node) {
+            JsonNode function = item.path("function");
+            if (!item.path("id").isTextual()
+                    || !item.path("type").isTextual()
+                    || !function.path("name").isTextual()
+                    || !function.path("arguments").isTextual()) {
+                throw new IllegalStateException(providerId + " response contains an invalid tool call");
+            }
+            toolCalls.add(new ChatToolCall(
+                    item.path("id").asText(),
+                    item.path("type").asText(),
+                    new ChatFunctionCall(
+                            function.path("name").asText(),
+                            function.path("arguments").asText()
+                    )
+            ));
+        }
+        return List.copyOf(toolCalls);
     }
 
     private Map<String, Object> requestFields(ProviderRequest request, boolean stream) {
         Map<String, Object> requestFields = new LinkedHashMap<>();
         requestFields.put("model", wireModel);
-        requestFields.put("messages", request.messages().stream()
-                .map(message -> Map.of(
-                        "role", message.role(),
-                        "content", message.content()
-                ))
-                .toList());
+        requestFields.put("messages", request.messages().stream().map(this::messageFields).toList());
         requestFields.put("stream", stream);
         if (stream) {
             requestFields.put("stream_options", Map.of("include_usage", true));
@@ -348,7 +378,29 @@ public class DeepSeekModelProvider implements ModelProvider {
         if (request.presencePenalty() != null) {
             requestFields.put("presence_penalty", request.presencePenalty());
         }
+        if (request.tools() != null && !request.tools().isEmpty()) {
+            requestFields.put("tools", request.tools());
+        }
+        if (request.toolChoice() != null) {
+            requestFields.put("tool_choice", request.toolChoice());
+        }
         return requestFields;
+    }
+
+    private Map<String, Object> messageFields(ChatMessage message) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("role", message.role());
+        fields.put("content", message.content());
+        if (message.name() != null) {
+            fields.put("name", message.name());
+        }
+        if (message.tool_call_id() != null) {
+            fields.put("tool_call_id", message.tool_call_id());
+        }
+        if (message.tool_calls() != null && !message.tool_calls().isEmpty()) {
+            fields.put("tool_calls", message.tool_calls());
+        }
+        return fields;
     }
 
     private void readStream(
@@ -380,12 +432,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                     JsonNode content = choice.path("delta").path("content");
                     if (content.isTextual() && !content.asText().isEmpty()) {
                         String delta = content.asText();
-                        if ((long) stream.content.length() + delta.length() > maxStreamResponseChars) {
-                            throw new ResponseLimitExceededException(
-                                    providerId + " streamed response exceeded "
-                                            + maxStreamResponseChars + " characters"
-                            );
-                        }
+                        ensureWithinStreamLimit(stream, delta.length());
                         try {
                             consumer.onDelta(delta);
                         } catch (IOException exception) {
@@ -396,6 +443,30 @@ public class DeepSeekModelProvider implements ModelProvider {
                         }
                         stream.content.append(delta);
                         stream.emitted = true;
+                    }
+                    JsonNode toolCalls = choice.path("delta").path("tool_calls");
+                    if (toolCalls.isArray()) {
+                        int fallbackIndex = 0;
+                        for (JsonNode toolCall : toolCalls) {
+                            int index = toolCall.path("index").asInt(fallbackIndex++);
+                            String id = textOrNull(toolCall.path("id"));
+                            String type = textOrNull(toolCall.path("type"));
+                            JsonNode function = toolCall.path("function");
+                            String name = textOrNull(function.path("name"));
+                            String arguments = textOrNull(function.path("arguments"));
+                            ensureWithinStreamLimit(stream,
+                                    length(id) + length(type) + length(name) + length(arguments));
+                            try {
+                                consumer.onToolCallDelta(index, id, type, name, arguments);
+                            } catch (IOException exception) {
+                                throw new ProviderStreamCancelledException(
+                                        "Provider stream consumer is unavailable",
+                                        exception
+                                );
+                            }
+                            stream.toolCall(index).append(id, type, name, arguments);
+                            stream.emitted = true;
+                        }
                     }
                     JsonNode finishReason = choice.path("finish_reason");
                     if (finishReason.isTextual() && !finishReason.asText().isBlank()) {
@@ -411,6 +482,23 @@ public class DeepSeekModelProvider implements ModelProvider {
                 }
             }
         }
+    }
+
+    private void ensureWithinStreamLimit(StreamAccumulator stream, int additionalCharacters) {
+        if ((long) stream.responseCharacters + additionalCharacters > maxStreamResponseChars) {
+            throw new ResponseLimitExceededException(
+                    providerId + " streamed response exceeded " + maxStreamResponseChars + " characters"
+            );
+        }
+        stream.responseCharacters += additionalCharacters;
+    }
+
+    private String textOrNull(JsonNode node) {
+        return node.isTextual() ? node.asText() : null;
+    }
+
+    private int length(String value) {
+        return value == null ? 0 : value.length();
     }
 
     private void closeQuietly(InputStream responseBody) {
@@ -520,11 +608,59 @@ public class DeepSeekModelProvider implements ModelProvider {
     private static final class StreamAccumulator {
 
         private final StringBuilder content = new StringBuilder();
+        private final Map<Integer, StreamToolCallAccumulator> toolCalls = new TreeMap<>();
+        private int responseCharacters;
         private boolean emitted;
         private boolean usageReported;
         private int inputTokens;
         private int outputTokens;
         private String finishReason = "stop";
+
+        private StreamToolCallAccumulator toolCall(int index) {
+            return toolCalls.computeIfAbsent(index, ignored -> new StreamToolCallAccumulator());
+        }
+
+        private List<ChatToolCall> toolCalls() {
+            return toolCalls.values().stream().map(StreamToolCallAccumulator::build).toList();
+        }
+
+        private String generatedText() {
+            StringBuilder generated = new StringBuilder(content);
+            toolCalls.values().forEach(call -> generated.append(call.name).append(call.arguments));
+            return generated.toString();
+        }
+    }
+
+    private static final class StreamToolCallAccumulator {
+
+        private final StringBuilder id = new StringBuilder();
+        private final StringBuilder type = new StringBuilder();
+        private final StringBuilder name = new StringBuilder();
+        private final StringBuilder arguments = new StringBuilder();
+
+        private void append(String id, String type, String name, String arguments) {
+            appendIfPresent(this.id, id);
+            appendIfPresent(this.type, type);
+            appendIfPresent(this.name, name);
+            appendIfPresent(this.arguments, arguments);
+        }
+
+        private ChatToolCall build() {
+            if (id.isEmpty() || type.isEmpty() || name.isEmpty()) {
+                throw new IllegalStateException("Provider stream contains an incomplete tool call");
+            }
+            return new ChatToolCall(
+                    id.toString(),
+                    type.toString(),
+                    new ChatFunctionCall(name.toString(), arguments.toString())
+            );
+        }
+
+        private static void appendIfPresent(StringBuilder target, String value) {
+            if (value != null) {
+                target.append(value);
+            }
+        }
     }
 
     private static final class ResponseLimitExceededException extends IllegalStateException {
