@@ -153,7 +153,10 @@ public class StreamingChatCompletionService {
                 context.request().messages(),
                 context.request().temperature(),
                 context.request().max_tokens(),
-                context.request().top_p()
+                context.request().top_p(),
+                context.request().seed(),
+                context.request().frequency_penalty(),
+                context.request().presence_penalty()
         );
         List<ModelProvider> candidates = context.providerCandidates().isEmpty()
                 ? List.of(context.provider())

@@ -339,6 +339,15 @@ public class DeepSeekModelProvider implements ModelProvider {
         if (request.topP() != null) {
             requestFields.put("top_p", request.topP());
         }
+        if (request.seed() != null) {
+            requestFields.put("seed", request.seed());
+        }
+        if (request.frequencyPenalty() != null) {
+            requestFields.put("frequency_penalty", request.frequencyPenalty());
+        }
+        if (request.presencePenalty() != null) {
+            requestFields.put("presence_penalty", request.presencePenalty());
+        }
         return requestFields;
     }
 

@@ -27,6 +27,12 @@ class ExactCacheKeyFactoryTest {
         assertNotEquals(key, factory.create("tenant-a", request("stub-echo-v1", 0.7, "hello")));
         assertNotEquals(key, factory.create("tenant-a", request("stub-echo-v1", 0.5, 256, null, "hello")));
         assertNotEquals(key, factory.create("tenant-a", request("stub-echo-v1", 0.5, null, 0.9, "hello")));
+        assertNotEquals(key, factory.create("tenant-a", request(
+                "stub-echo-v1", 0.5, null, null, 42L, null, null, "hello")));
+        assertNotEquals(key, factory.create("tenant-a", request(
+                "stub-echo-v1", 0.5, null, null, null, 0.4, null, "hello")));
+        assertNotEquals(key, factory.create("tenant-a", request(
+                "stub-echo-v1", 0.5, null, null, null, null, 0.4, "hello")));
         assertNotEquals(key, factory.create("tenant-a", request("stub-echo-v1", 0.5, "hello ")));
         assertTrue(key.matches("[0-9a-f]{64}"));
     }
@@ -42,13 +48,29 @@ class ExactCacheKeyFactoryTest {
             Double topP,
             String content
     ) {
+        return request(model, temperature, maxTokens, topP, null, null, null, content);
+    }
+
+    private ChatCompletionRequest request(
+            String model,
+            Double temperature,
+            Integer maxTokens,
+            Double topP,
+            Long seed,
+            Double frequencyPenalty,
+            Double presencePenalty,
+            String content
+    ) {
         return new ChatCompletionRequest(
                 model,
                 List.of(new ChatMessage("user", content)),
                 false,
                 temperature,
                 maxTokens,
-                topP
+                topP,
+                seed,
+                frequencyPenalty,
+                presencePenalty
         );
     }
 }

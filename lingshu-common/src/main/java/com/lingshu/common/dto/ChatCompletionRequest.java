@@ -16,8 +16,22 @@ public record ChatCompletionRequest(
         Boolean stream,
         @DecimalMin("0.0") @DecimalMax("2.0") Double temperature,
         @Positive Integer max_tokens,
-        @DecimalMin("0.0") @DecimalMax("1.0") Double top_p
+        @DecimalMin("0.0") @DecimalMax("1.0") Double top_p,
+        Long seed,
+        @DecimalMin("-2.0") @DecimalMax("2.0") Double frequency_penalty,
+        @DecimalMin("-2.0") @DecimalMax("2.0") Double presence_penalty
 ) {
+
+    public ChatCompletionRequest(
+            String model,
+            List<ChatMessage> messages,
+            Boolean stream,
+            Double temperature,
+            Integer max_tokens,
+            Double top_p
+    ) {
+        this(model, messages, stream, temperature, max_tokens, top_p, null, null, null);
+    }
 
     public String prompt() {
         return messages.stream()

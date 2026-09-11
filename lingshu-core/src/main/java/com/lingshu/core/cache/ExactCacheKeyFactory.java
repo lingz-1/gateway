@@ -27,6 +27,9 @@ public class ExactCacheKeyFactory {
         append(canonical, request.temperature() == null ? "default" : request.temperature().toString());
         append(canonical, request.max_tokens() == null ? "default" : request.max_tokens().toString());
         append(canonical, request.top_p() == null ? "default" : request.top_p().toString());
+        append(canonical, request.seed() == null ? "default" : request.seed().toString());
+        append(canonical, request.frequency_penalty() == null ? "default" : request.frequency_penalty().toString());
+        append(canonical, request.presence_penalty() == null ? "default" : request.presence_penalty().toString());
         for (ChatMessage message : request.messages()) {
             append(canonical, message.role());
             append(canonical, message.content());

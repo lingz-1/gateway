@@ -11,8 +11,23 @@ public record ProviderRequest(
         List<ChatMessage> messages,
         Double temperature,
         Integer maxTokens,
-        Double topP
+        Double topP,
+        Long seed,
+        Double frequencyPenalty,
+        Double presencePenalty
 ) {
+    public ProviderRequest(
+            String traceId,
+            String tenantId,
+            String requestedModel,
+            List<ChatMessage> messages,
+            Double temperature,
+            Integer maxTokens,
+            Double topP
+    ) {
+        this(traceId, tenantId, requestedModel, messages, temperature, maxTokens, topP, null, null, null);
+    }
+
     public ProviderRequest {
         Objects.requireNonNull(traceId, "traceId must not be null");
         Objects.requireNonNull(tenantId, "tenantId must not be null");
@@ -30,6 +45,12 @@ public record ProviderRequest(
         }
         if (topP != null && (topP < 0.0 || topP > 1.0)) {
             throw new IllegalArgumentException("topP must be between 0 and 1");
+        }
+        if (frequencyPenalty != null && (frequencyPenalty < -2.0 || frequencyPenalty > 2.0)) {
+            throw new IllegalArgumentException("frequencyPenalty must be between -2 and 2");
+        }
+        if (presencePenalty != null && (presencePenalty < -2.0 || presencePenalty > 2.0)) {
+            throw new IllegalArgumentException("presencePenalty must be between -2 and 2");
         }
     }
 

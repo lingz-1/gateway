@@ -112,11 +112,25 @@ class ChatCompletionIntegrationTest {
                         + "\"top_p\":1.1}",
                 "trace-invalid-top-p"
         );
+        HttpResponse<String> frequencyPenaltyResponse = postRaw(
+                "{\"model\":\"stub-echo-v1\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],"
+                        + "\"frequency_penalty\":-2.1}",
+                "trace-invalid-frequency-penalty"
+        );
+        HttpResponse<String> presencePenaltyResponse = postRaw(
+                "{\"model\":\"stub-echo-v1\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],"
+                        + "\"presence_penalty\":2.1}",
+                "trace-invalid-presence-penalty"
+        );
 
         assertEquals(400, maxTokensResponse.statusCode());
         assertTrue(maxTokensResponse.body().contains("INVALID_REQUEST"));
         assertEquals(400, topPResponse.statusCode());
         assertTrue(topPResponse.body().contains("INVALID_REQUEST"));
+        assertEquals(400, frequencyPenaltyResponse.statusCode());
+        assertTrue(frequencyPenaltyResponse.body().contains("INVALID_REQUEST"));
+        assertEquals(400, presencePenaltyResponse.statusCode());
+        assertTrue(presencePenaltyResponse.body().contains("INVALID_REQUEST"));
     }
 
     @Test

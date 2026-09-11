@@ -38,7 +38,10 @@ public class PiiRedactionProcessor implements ChatProcessor {
                 request.stream(),
                 request.temperature(),
                 request.max_tokens(),
-                request.top_p()
+                request.top_p(),
+                request.seed(),
+                request.frequency_penalty(),
+                request.presence_penalty()
         ));
     }
 

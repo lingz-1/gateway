@@ -9,6 +9,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,6 +19,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -118,6 +120,28 @@ class SemanticCacheServiceTest {
         assertNotEquals(firstScope.getValue(), secondScope.getValue());
     }
 
+    @Test
+    void isolatesCacheByExtendedSamplingParameters() {
+        LingShuProperties properties = enabledProperties();
+        SemanticCacheStore store = mock(SemanticCacheStore.class);
+        SemanticCacheService service = new SemanticCacheService(
+                properties,
+                text -> new double[]{1.0, 0.0},
+                store,
+                new ExactCacheKeyFactory(properties)
+        );
+        double[] embedding = {1.0, 0.0};
+
+        service.find("tenant-a", request("hello", null, null, null), embedding);
+        service.find("tenant-a", request("hello", 42L, null, null), embedding);
+        service.find("tenant-a", request("hello", null, 0.4, null), embedding);
+        service.find("tenant-a", request("hello", null, null, 0.4), embedding);
+
+        ArgumentCaptor<String> scope = ArgumentCaptor.forClass(String.class);
+        verify(store, times(4)).find(anyString(), scope.capture(), any(double[].class), anyDouble());
+        assertEquals(4, Set.copyOf(scope.getAllValues()).size());
+    }
+
     private LingShuProperties enabledProperties() {
         LingShuProperties properties = new LingShuProperties();
         properties.getCache().getSemantic().setEnabled(true);
@@ -125,13 +149,25 @@ class SemanticCacheServiceTest {
     }
 
     private ChatCompletionRequest request(String content) {
+        return request(content, null, null, null);
+    }
+
+    private ChatCompletionRequest request(
+            String content,
+            Long seed,
+            Double frequencyPenalty,
+            Double presencePenalty
+    ) {
         return new ChatCompletionRequest(
                 "stub-echo-v1",
                 List.of(new ChatMessage("user", content)),
                 false,
                 0.2,
                 null,
-                null
+                null,
+                seed,
+                frequencyPenalty,
+                presencePenalty
         );
     }
 }

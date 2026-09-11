@@ -23,7 +23,7 @@
 ### 阶段 1：最小纵向链路
 
 - Gateway：TraceId、API Key 鉴权骨架、基础路由。
-- Core：兼容 `/v1/chat/completions` 的非流式端点。
+- Core：兼容 `/v1/chat/completions` 的非流式端点；已支持 `temperature`、`max_tokens`、`top_p`、`seed`、`frequency_penalty` 和 `presence_penalty` 的校验、透传及缓存隔离。
 - Processor Engine：Trace、Router、ProviderInvoke。
 - Provider：Stub 基线已完成；DeepSeek OpenAI 兼容 Provider 已接入，支持 `.env` 配置并将 `deepseek-v4flash` 兼容转换为 API 支持的 `deepseek-v4-flash`。
 - Router：实现确定性的规则路由及失败错误契约。

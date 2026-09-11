@@ -71,7 +71,10 @@ class DeepSeekModelProviderTest {
                 ),
                 0.4,
                 512,
-                0.9
+                0.9,
+                42L,
+                -0.4,
+                0.8
         ));
 
         assertEquals("deepseek", response.provider());
@@ -91,6 +94,9 @@ class DeepSeekModelProviderTest {
         assertEquals(0.4, request.path("temperature").asDouble());
         assertEquals(512, request.path("max_tokens").asInt());
         assertEquals(0.9, request.path("top_p").asDouble());
+        assertEquals(42L, request.path("seed").asLong());
+        assertEquals(-0.4, request.path("frequency_penalty").asDouble());
+        assertEquals(0.8, request.path("presence_penalty").asDouble());
         assertTrue(!request.path("stream").asBoolean());
     }
 

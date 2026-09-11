@@ -137,6 +137,9 @@ public class SemanticCacheService {
                 + "\u0000" + (request.temperature() == null ? "default" : request.temperature())
                 + "\u0000" + (request.max_tokens() == null ? "default" : request.max_tokens())
                 + "\u0000" + (request.top_p() == null ? "default" : request.top_p())
+                + "\u0000" + (request.seed() == null ? "default" : request.seed())
+                + "\u0000" + (request.frequency_penalty() == null ? "default" : request.frequency_penalty())
+                + "\u0000" + (request.presence_penalty() == null ? "default" : request.presence_penalty())
                 + "\u0000" + embeddingProvider
                 + "\u0000" + embeddingModel
                 + "\u0000" + embeddingDimension;

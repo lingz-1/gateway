@@ -57,5 +57,33 @@ class ProviderRequestTest {
         assertThrows(IllegalArgumentException.class, () -> new ProviderRequest(
                 "trace-1", "tenant-1", "logical-model", messages, null, null, 1.1
         ));
+        assertThrows(IllegalArgumentException.class, () -> new ProviderRequest(
+                "trace-1", "tenant-1", "logical-model", messages,
+                null, null, null, null, -2.1, null
+        ));
+        assertThrows(IllegalArgumentException.class, () -> new ProviderRequest(
+                "trace-1", "tenant-1", "logical-model", messages,
+                null, null, null, null, null, 2.1
+        ));
+    }
+
+    @Test
+    void preservesExtendedSamplingParameters() {
+        ProviderRequest request = new ProviderRequest(
+                "trace-1",
+                "tenant-1",
+                "logical-model",
+                List.of(new ChatMessage("user", "Hello")),
+                0.5,
+                512,
+                0.9,
+                42L,
+                -0.4,
+                0.8
+        );
+
+        assertEquals(42L, request.seed());
+        assertEquals(-0.4, request.frequencyPenalty());
+        assertEquals(0.8, request.presencePenalty());
     }
 }
