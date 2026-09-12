@@ -194,6 +194,8 @@ The Nacos data item is a JSON document with a `policies` array. Each entry uses 
 
 Request, latency, token, virtual-cost, and failure metrics include a `tenant` tag so Prometheus can aggregate them per tenant.
 
+Core and Gateway emit Logstash-compatible JSON console logs by default. Core log events executed on the request thread include MDC `traceId` and `tenantId` fields. Gateway emits one completion event for every non-actuator request with trace, tenant, method, path, status, duration, reactive signal, and exception type when present; request bodies and authentication headers are never logged. Override the Spring Boot structured format with `LINGSHU_LOG_FORMAT` when integrating another supported encoder.
+
 Protect these internal endpoints outside local development by enabling `LINGSHU_INTERNAL_ADMIN_KEY_ENABLED` and supplying `LINGSHU_INTERNAL_ADMIN_KEY` through the process environment.
 
 ## Local infrastructure

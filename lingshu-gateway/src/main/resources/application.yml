@@ -14,6 +14,14 @@ spring:
               predicates:
                 - Path=/v1/**
 
+logging:
+  structured:
+    format:
+      console: ${LINGSHU_LOG_FORMAT:logstash}
+    json:
+      add:
+        service: ${spring.application.name}
+
 lingshu:
   gateway:
     api-key:

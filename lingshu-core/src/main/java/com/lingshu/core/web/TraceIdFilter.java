@@ -27,10 +27,15 @@ public class TraceIdFilter extends OncePerRequestFilter {
         request.setAttribute(TRACE_ID_ATTRIBUTE, traceId);
         response.setHeader(TraceHeaders.TRACE_ID, traceId);
         MDC.put("traceId", traceId);
+        String tenantId = request.getHeader(TraceHeaders.TENANT_ID);
+        if (tenantId != null && !tenantId.isBlank()) {
+            MDC.put("tenantId", tenantId);
+        }
         try {
             filterChain.doFilter(request, response);
         } finally {
             MDC.remove("traceId");
+            MDC.remove("tenantId");
         }
     }
 }

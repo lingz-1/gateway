@@ -71,7 +71,7 @@
 - 已完成租户启停、模型白名单、PII 脱敏、精确/语义缓存开关、RPM/并发限制和虚拟计费单价策略。
 - 已完成可切换的租户限流存储：默认内存模式保持零依赖，Redis 模式通过 Lua 原子执行 RPM 与并发许可判定，使用 Redis 服务器时间统一窗口，并通过许可 TTL 回收异常实例占用。
 - Nacos HTTP 适配器已完成：按 MD5 轮询更新，远端策略优先，本地/数据库策略回退；拉取或解析失败时保留最后一次有效快照，且配置中心实现未侵入 Processor Engine。
-- Micrometer 请求、延迟、Token、虚拟费用和失败指标已补齐租户标签；Prometheus 抓取已具备，Grafana 租户面板和结构化日志仍待完善。
+- Micrometer 请求、延迟、Token、虚拟费用和失败指标已补齐租户标签；Prometheus 抓取与 Grafana 租户面板已具备；Core/Gateway 默认输出 Logstash JSON，Core 注入 trace/tenant MDC，Gateway 记录不含请求体和密钥的结构化访问日志。告警规则仍待完善。
 - 完善多租户策略、告警和错误契约。
 
 验收：策略变更可动态生效；Trace、延迟、错误率、Token 和费用可按租户查询。
