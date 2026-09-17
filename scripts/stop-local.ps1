@@ -17,7 +17,25 @@ foreach ($service in $Services) {
         if ($commandLine -notlike "*$($service.Marker)*" -and $commandLine -notlike "*$ProjectRoot*") {
             throw "$($service.Name) port $($service.Port) belongs to an unrelated process. It was not stopped."
         }
-        Stop-Process -Id $connection.OwningProcess -Force
+
+        $projectProcessIds = [System.Collections.Generic.List[int]]::new()
+        $currentProcess = $processInfo
+        while ($null -ne $currentProcess -and $currentProcess.ProcessId -ne $PID) {
+            $currentCommandLine = [string]$currentProcess.CommandLine
+            $isProjectProcess = $currentCommandLine -like "*$($service.Marker)*" `
+                -or $currentCommandLine -like "*$ProjectRoot*"
+            if ($projectProcessIds.Count -gt 0 -and -not $isProjectProcess) {
+                break
+            }
+            $projectProcessIds.Add([int]$currentProcess.ProcessId)
+            if ($currentProcess.ParentProcessId -le 0) {
+                break
+            }
+            $currentProcess = Get-CimInstance Win32_Process `
+                -Filter "ProcessId = $($currentProcess.ParentProcessId)" -ErrorAction SilentlyContinue
+        }
+
+        Stop-Process -Id $projectProcessIds.ToArray() -Force -ErrorAction SilentlyContinue
         Write-Host "Stopped $($service.Name) on port $($service.Port)."
     }
 }
