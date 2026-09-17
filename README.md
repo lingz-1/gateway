@@ -59,6 +59,21 @@ Run the dependency-free mixed streaming/non-streaming load test against Gateway:
 
 Add `--warm-cache` and use a smaller prompt cardinality for an exact-cache baseline. The script reports throughput, latency P50/P95/P99, streaming TTFT P50/P95/P99, HTTP status codes, errors, and cache-result counts. The first recorded local baseline is documented in [`docs/performance-baseline.md`](docs/performance-baseline.md).
 
+For 10,000 to 1,000,000 request experiments, use the bounded-memory keep-alive runner. Benchmark mode restarts the Stub profile with per-request INFO logs disabled; choose whether exact caching is available before starting the run:
+
+```powershell
+.\scripts\start-benchmark.ps1 -Cache Off
+.\scripts\python.ps1 .\scripts\load-test-large.py --requests 10000 --concurrency 100 --prompt-cardinality 10000 --stream-ratio 0.5 --warmup-requests 1000 --label uncached-10k
+```
+
+Use `-Cache Exact`, a bounded prompt cardinality, and `--warm-cache` for an exact-hit comparison. Run a repeatable concurrency matrix with `run-benchmark-matrix.ps1`; raw summaries and one-second Gateway/Core resource samples are written below `${LINGSHU_DATA_ROOT}/benchmarks` rather than the repository. Do not start at one million requests: validate 10,000 and 100,000 request stages first, confirm zero errors and stable resources, and only then increase the total.
+
+```powershell
+.\scripts\run-benchmark-matrix.ps1 -Requests 10000 -Concurrency 20,50,100,200 -Repetitions 3
+```
+
+The large-scale runner uses fixed workers, persistent HTTP connections, bounded histograms, partial-result handling on interruption, and independent Prometheus samplers. The recorded 10,000-, 200,000-, and 1,000,000-request results, including the bounded trace-cache fix discovered by the test, are documented in [`docs/performance-large-scale.md`](docs/performance-large-scale.md).
+
 To start the production-like local infrastructure and Qwen embedding profile, add `-FullInfrastructure`. This requires `.env`, Docker, and the model under `${LINGSHU_DATA_ROOT}/models/Qwen3-Embedding-4B`. The checked-in example defaults `LINGSHU_DATA_ROOT` to `E:\LingShuData`, but another absolute data directory may be supplied locally:
 
 ```powershell

@@ -2,7 +2,8 @@ param(
     [ValidateSet("Stub", "DeepSeek")]
     [string]$Provider = "Stub",
     [switch]$Build,
-    [switch]$FullInfrastructure
+    [switch]$FullInfrastructure,
+    [switch]$Benchmark
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +18,12 @@ if (Test-Path -LiteralPath $EnvironmentFile) {
     }
 } elseif ($FullInfrastructure -or $Provider -eq "DeepSeek") {
     throw ".env not found. Copy .env.example to .env and configure local infrastructure."
+}
+
+if ($Benchmark) {
+    if ($Provider -ne "Stub" -or $FullInfrastructure) {
+        throw "Benchmark mode supports the Stub provider without full infrastructure."
+    }
 }
 
 $DataRoot = if ([string]::IsNullOrWhiteSpace($env:LINGSHU_DATA_ROOT)) { "E:\LingShuData" } else { $env:LINGSHU_DATA_ROOT }
@@ -45,6 +52,12 @@ if ($Build) {
     }
 } elseif (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "lingshu-web\node_modules"))) {
     throw "Frontend dependencies are missing. Run .\scripts\start-local.ps1 -Build first."
+}
+
+if ($Benchmark) {
+    $env:LINGSHU_CACHE_EXACT_ENABLED = if ($env:LINGSHU_BENCHMARK_CACHE_ENABLED -eq "true") { "true" } else { "false" }
+    $env:LOGGING_LEVEL_COM_LINGSHU_GATEWAY_FILTER = "WARN"
+    $env:LOGGING_LEVEL_COM_LINGSHU_CORE = "WARN"
 }
 
 function Test-Health([string]$Uri) {
@@ -166,3 +179,4 @@ if ($FullInfrastructure -or $Provider -eq "DeepSeek") {
 }
 Write-Host "Provider:   $Provider"
 Write-Host "Infrastructure: $(if ($FullInfrastructure -or $Provider -eq 'DeepSeek') { 'full' } else { 'none (in-memory)' })"
+Write-Host "Benchmark:  $(if ($Benchmark) { 'enabled' } else { 'disabled' })"

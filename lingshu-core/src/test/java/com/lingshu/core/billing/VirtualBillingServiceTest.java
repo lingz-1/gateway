@@ -6,6 +6,8 @@ import com.lingshu.core.config.LingShuProperties;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class VirtualBillingServiceTest {
 
@@ -48,5 +50,21 @@ class VirtualBillingServiceTest {
 
         assertEquals(0.000396, charge.costCny().doubleValue(), 0.000000001);
         assertEquals(9.999604, charge.remainingBalanceCny().doubleValue(), 0.000001);
+    }
+
+    @Test
+    void evictsOldTraceChargesWhenTheBoundIsReached() {
+        LingShuProperties properties = new LingShuProperties();
+        properties.getBilling().getVirtual().setMaxTraceEntries(2);
+        VirtualBillingService service = new VirtualBillingService(properties);
+        ProviderResponse response = new ProviderResponse("stub", "stub-echo-v1", "ok", 1, 1);
+
+        service.charge("tenant-a", "trace-1", response, CacheStatus.MISS);
+        service.charge("tenant-a", "trace-2", response, CacheStatus.MISS);
+        service.charge("tenant-a", "trace-3", response, CacheStatus.MISS);
+
+        assertNull(service.chargeForTrace("trace-1"));
+        assertNotNull(service.chargeForTrace("trace-2"));
+        assertNotNull(service.chargeForTrace("trace-3"));
     }
 }

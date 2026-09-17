@@ -53,10 +53,10 @@ lingshu:
     internal-admin-key: ${LINGSHU_INTERNAL_ADMIN_KEY:}
   cache:
     exact:
-      enabled: true
+      enabled: ${LINGSHU_CACHE_EXACT_ENABLED:true}
       store: ${LINGSHU_CACHE_EXACT_STORE:memory}
       ttl: 10m
-      max-entries: 10000
+      max-entries: ${LINGSHU_CACHE_EXACT_MAX_ENTRIES:10000}
       prompt-version: v1
     semantic:
       enabled: ${LINGSHU_CACHE_SEMANTIC_ENABLED:false}
@@ -115,6 +115,7 @@ lingshu:
       input-price-usd-per-million: ${LINGSHU_VIRTUAL_INPUT_PRICE_USD_PER_MILLION:0.22}
       output-price-usd-per-million: ${LINGSHU_VIRTUAL_OUTPUT_PRICE_USD_PER_MILLION:0.66}
       usd-to-cny: ${LINGSHU_VIRTUAL_USD_TO_CNY:7.20}
+      max-trace-entries: ${LINGSHU_VIRTUAL_MAX_TRACE_ENTRIES:10000}
     outbox:
       enabled: ${LINGSHU_BILLING_OUTBOX_ENABLED:false}
       batch-size: ${LINGSHU_BILLING_OUTBOX_BATCH_SIZE:100}

@@ -13,10 +13,12 @@ import org.springframework.lang.Nullable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.util.Optional;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
@@ -30,8 +32,8 @@ public class VirtualBillingService {
     private final LingShuProperties.Billing.Virtual properties;
     private final VirtualBillingStore store;
     private final TenantPolicyService tenantPolicyService;
-    private final ConcurrentMap<String, AtomicLong> balancesMicros = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, VirtualBillingCharge> chargesByTrace = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> balancesMicros = new ConcurrentHashMap<>();
+    private final Map<String, VirtualBillingCharge> chargesByTrace;
 
     public VirtualBillingService(LingShuProperties properties) {
         this(properties, null, null);
@@ -47,6 +49,13 @@ public class VirtualBillingService {
         this.store = store;
         this.tenantPolicyService = tenantPolicyService;
         validateProperties();
+        int maxTraceEntries = this.properties.getMaxTraceEntries();
+        this.chargesByTrace = Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, VirtualBillingCharge> eldest) {
+                return size() > maxTraceEntries;
+            }
+        });
     }
 
     public VirtualBillingCharge charge(
@@ -232,6 +241,9 @@ public class VirtualBillingService {
         requireNonNegative(properties.getOutputPriceUsdPerMillion(), "output price");
         if (properties.getUsdToCny() == null || properties.getUsdToCny().signum() <= 0) {
             throw new IllegalArgumentException("virtual billing USD/CNY rate must be positive");
+        }
+        if (properties.getMaxTraceEntries() < 1) {
+            throw new IllegalArgumentException("virtual billing max trace entries must be positive");
         }
     }
 

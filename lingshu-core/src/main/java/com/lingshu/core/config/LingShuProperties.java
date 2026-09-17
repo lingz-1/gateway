@@ -276,6 +276,7 @@ public class LingShuProperties {
             private java.math.BigDecimal outputPriceUsdPerMillion = new java.math.BigDecimal("0.66");
             private java.math.BigDecimal usdToCny = new java.math.BigDecimal("7.20");
             private boolean persistenceEnabled;
+            private int maxTraceEntries = 10000;
 
             public boolean isEnabled() {
                 return enabled;
@@ -323,6 +324,14 @@ public class LingShuProperties {
 
             public void setPersistenceEnabled(boolean persistenceEnabled) {
                 this.persistenceEnabled = persistenceEnabled;
+            }
+
+            public int getMaxTraceEntries() {
+                return maxTraceEntries;
+            }
+
+            public void setMaxTraceEntries(int maxTraceEntries) {
+                this.maxTraceEntries = maxTraceEntries;
             }
         }
 
