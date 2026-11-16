@@ -55,4 +55,21 @@ class ProviderResponseTest {
         assertEquals("tool_calls", response.finishReason());
         assertEquals("get_weather", response.toolCalls().getFirst().function().name());
     }
+
+    @Test
+    void exposesEstimatedUsageProvenance() {
+        ProviderResponse response = new ProviderResponse(
+                "deepseek",
+                "deepseek-v4flash",
+                "answer",
+                3,
+                2,
+                TokenUsageSource.ESTIMATED,
+                "stop",
+                List.of()
+        );
+
+        assertEquals(TokenUsageSource.ESTIMATED, response.usageSource());
+        assertEquals(true, response.usageSource().includesEstimate());
+    }
 }

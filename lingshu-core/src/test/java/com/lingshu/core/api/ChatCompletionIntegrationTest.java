@@ -32,6 +32,8 @@ class ChatCompletionIntegrationTest {
         assertTrue(standard.body().contains("\"provider\":\"stub\""));
         assertTrue(standard.body().contains("\"finish_reason\":\"stop\""));
         assertTrue(standard.body().contains("\"providerAttempts\":[\"stub\"]"));
+        assertTrue(standard.body().contains("\"usageSource\":\"PROVIDER_REPORTED\""));
+        assertTrue(standard.body().contains("\"usageEstimated\":false"));
         assertTrue(standard.body().contains("\"name\":\"trace\""));
         assertTrue(standard.body().contains("\"name\":\"router\""));
         assertTrue(standard.body().contains("\"name\":\"provider-invoke\""));

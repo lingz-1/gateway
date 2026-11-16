@@ -21,7 +21,10 @@ public class RedisBudgetReservationStore implements BudgetReservationStore {
     private static final DefaultRedisScript<Long> RESERVE_SCRIPT = script("""
             local status = redis.call('HGET', KEYS[2], 'status')
             if status then
-              if status == 'PENDING' then return 2 else return 0 end
+              local tenant = redis.call('HGET', KEYS[2], 'tenant_id')
+              local units = redis.call('HGET', KEYS[2], 'units')
+              if status == 'PENDING' and tenant == ARGV[2] and units == ARGV[1] then return 2 end
+              return 0
             end
             local balance = redis.call('GET', KEYS[1])
             if not balance then return -2 end

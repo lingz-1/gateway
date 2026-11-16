@@ -11,6 +11,7 @@ public class LingShuProperties {
     private final Database database = new Database();
     private final Security security = new Security();
     private final TenantPolicy tenantPolicy = new TenantPolicy();
+    private final Streaming streaming = new Streaming();
 
     public Provider getProvider() {
         return provider;
@@ -34,6 +35,68 @@ public class LingShuProperties {
 
     public TenantPolicy getTenantPolicy() {
         return tenantPolicy;
+    }
+
+    public Streaming getStreaming() {
+        return streaming;
+    }
+
+    public static class Streaming {
+
+        private String routingStore = "memory";
+        private String instanceId = "local";
+        private String instanceBaseUrl = "http://127.0.0.1:8081";
+        private String redisKeyPrefix = "lingshu:stream-owner:";
+        private java.time.Duration ownerTtl = java.time.Duration.ofMinutes(5);
+        private java.time.Duration forwardTimeout = java.time.Duration.ofSeconds(2);
+
+        public String getRoutingStore() {
+            return routingStore;
+        }
+
+        public void setRoutingStore(String routingStore) {
+            this.routingStore = routingStore;
+        }
+
+        public String getInstanceId() {
+            return instanceId;
+        }
+
+        public void setInstanceId(String instanceId) {
+            this.instanceId = instanceId;
+        }
+
+        public String getInstanceBaseUrl() {
+            return instanceBaseUrl;
+        }
+
+        public void setInstanceBaseUrl(String instanceBaseUrl) {
+            this.instanceBaseUrl = instanceBaseUrl;
+        }
+
+        public String getRedisKeyPrefix() {
+            return redisKeyPrefix;
+        }
+
+        public void setRedisKeyPrefix(String redisKeyPrefix) {
+            this.redisKeyPrefix = redisKeyPrefix;
+        }
+
+        public java.time.Duration getOwnerTtl() {
+            return ownerTtl;
+        }
+
+        public void setOwnerTtl(java.time.Duration ownerTtl) {
+            this.ownerTtl = ownerTtl;
+        }
+
+        public java.time.Duration getForwardTimeout() {
+            return forwardTimeout;
+        }
+
+        public void setForwardTimeout(java.time.Duration forwardTimeout) {
+            this.forwardTimeout = forwardTimeout;
+        }
     }
 
     public static class TenantPolicy {
@@ -597,6 +660,10 @@ public class LingShuProperties {
 
         private boolean enabled = true;
         private String model = "stub-echo-v1";
+        private java.time.Duration streamDelay = java.time.Duration.ZERO;
+        private int streamChunks = 1;
+        private String streamFailureMode = "none";
+        private int streamFailureAfterChunks = 1;
 
         public boolean isEnabled() {
             return enabled;
@@ -612,6 +679,38 @@ public class LingShuProperties {
 
         public void setModel(String model) {
             this.model = model;
+        }
+
+        public java.time.Duration getStreamDelay() {
+            return streamDelay;
+        }
+
+        public void setStreamDelay(java.time.Duration streamDelay) {
+            this.streamDelay = streamDelay;
+        }
+
+        public int getStreamChunks() {
+            return streamChunks;
+        }
+
+        public void setStreamChunks(int streamChunks) {
+            this.streamChunks = streamChunks;
+        }
+
+        public String getStreamFailureMode() {
+            return streamFailureMode;
+        }
+
+        public void setStreamFailureMode(String streamFailureMode) {
+            this.streamFailureMode = streamFailureMode;
+        }
+
+        public int getStreamFailureAfterChunks() {
+            return streamFailureAfterChunks;
+        }
+
+        public void setStreamFailureAfterChunks(int streamFailureAfterChunks) {
+            this.streamFailureAfterChunks = streamFailureAfterChunks;
         }
     }
 

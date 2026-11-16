@@ -23,6 +23,19 @@ class Sample:
     ttft_us: int | None
     cache_status: str
     error: str | None
+    stream: bool = False
+    stream_chunks: int = 0
+    inter_chunk_us: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class StreamParseResult:
+    ttft_us: int | None
+    completion_us: int | None
+    cache_status: str
+    chunks: int
+    inter_chunk_us: tuple[int, ...]
+    error: str | None
 
 
 @dataclass
@@ -75,6 +88,15 @@ class WorkerStats:
     errors: int = 0
     latency: Histogram = field(default_factory=Histogram)
     ttft: Histogram = field(default_factory=Histogram)
+    stream_latency: Histogram = field(default_factory=Histogram)
+    non_stream_latency: Histogram = field(default_factory=Histogram)
+    inter_chunk_latency: Histogram = field(default_factory=Histogram)
+    stream_successes: int = 0
+    stream_errors: int = 0
+    non_stream_successes: int = 0
+    non_stream_errors: int = 0
+    stream_chunks: int = 0
+    max_stream_chunks: int = 0
     status_codes: Counter[str] = field(default_factory=Counter)
     cache_statuses: Counter[str] = field(default_factory=Counter)
     error_types: Counter[str] = field(default_factory=Counter)
@@ -86,10 +108,24 @@ class WorkerStats:
         if sample.error is None:
             self.successes += 1
             self.latency.add(sample.latency_us)
+            if sample.stream:
+                self.stream_successes += 1
+                self.stream_latency.add(sample.latency_us)
+                self.stream_chunks += sample.stream_chunks
+                self.max_stream_chunks = max(self.max_stream_chunks, sample.stream_chunks)
+                for value_us in sample.inter_chunk_us:
+                    self.inter_chunk_latency.add(value_us)
+            else:
+                self.non_stream_successes += 1
+                self.non_stream_latency.add(sample.latency_us)
             if sample.ttft_us is not None:
                 self.ttft.add(sample.ttft_us)
             return
         self.errors += 1
+        if sample.stream:
+            self.stream_errors += 1
+        else:
+            self.non_stream_errors += 1
         error_type = sample.error.split(":", 1)[0]
         self.error_types[error_type] += 1
         if len(self.error_samples) < 10:
@@ -100,6 +136,15 @@ class WorkerStats:
         self.errors += other.errors
         self.latency.merge(other.latency)
         self.ttft.merge(other.ttft)
+        self.stream_latency.merge(other.stream_latency)
+        self.non_stream_latency.merge(other.non_stream_latency)
+        self.inter_chunk_latency.merge(other.inter_chunk_latency)
+        self.stream_successes += other.stream_successes
+        self.stream_errors += other.stream_errors
+        self.non_stream_successes += other.non_stream_successes
+        self.non_stream_errors += other.non_stream_errors
+        self.stream_chunks += other.stream_chunks
+        self.max_stream_chunks = max(self.max_stream_chunks, other.max_stream_chunks)
         self.status_codes.update(other.status_codes)
         self.cache_statuses.update(other.cache_statuses)
         self.error_types.update(other.error_types)
@@ -161,29 +206,63 @@ def request_headers(tenant_id: str, trace_id: str, api_key: str | None) -> dict[
     return headers
 
 
-def parse_stream(response: http.client.HTTPResponse, started_ns: int) -> tuple[int | None, str]:
+def parse_stream(response: http.client.HTTPResponse, started_ns: int) -> StreamParseResult:
     ttft_us: int | None = None
+    completion_us: int | None = None
     cache_status = str(response.getheader("X-LingShu-Cache", "UNKNOWN")).upper()
+    chunks = 0
+    inter_chunk_us: list[int] = []
+    previous_chunk_ns: int | None = None
+    stream_error: str | None = None
+    event_name: str | None = None
     while True:
         raw_line = response.readline()
         if not raw_line:
             break
         line = raw_line.decode("utf-8").strip()
+        if line.startswith("event:"):
+            event_name = line[len("event:"):].strip()
+            continue
         if not line.startswith("data:"):
             continue
         data = line[len("data:"):].strip()
-        if not data or data == "[DONE]":
+        if not data:
+            continue
+        if data == "[DONE]":
+            completion_us = (time.perf_counter_ns() - started_ns) // 1000
+            event_name = None
             continue
         event = json.loads(data)
+        if event_name == "error" or event.get("error"):
+            message = event.get("message") or event.get("error") or "stream returned an error event"
+            stream_error = f"StreamError: {message}"
+            event_name = None
+            continue
         choices = event.get("choices", [])
-        if choices and ttft_us is None:
+        if choices:
             delta = choices[0].get("delta", {})
             if delta.get("content") or delta.get("tool_calls"):
-                ttft_us = (time.perf_counter_ns() - started_ns) // 1000
+                observed_ns = time.perf_counter_ns()
+                if ttft_us is None:
+                    ttft_us = (observed_ns - started_ns) // 1000
+                if previous_chunk_ns is not None:
+                    inter_chunk_us.append((observed_ns - previous_chunk_ns) // 1000)
+                previous_chunk_ns = observed_ns
+                chunks += 1
         metadata = event.get("metadata")
         if metadata:
             cache_status = str(metadata.get("cacheStatus", cache_status)).upper()
-    return ttft_us, cache_status
+        event_name = None
+    if stream_error is None and completion_us is None:
+        stream_error = "StreamIncomplete: connection closed before [DONE]"
+    return StreamParseResult(
+        ttft_us,
+        completion_us,
+        cache_status,
+        chunks,
+        tuple(inter_chunk_us),
+        stream_error,
+    )
 
 
 def execute_request(
@@ -221,9 +300,21 @@ def execute_request(
                 None,
                 "UNKNOWN",
                 f"HTTP {status}",
+                stream=stream,
             )
         if stream:
-            ttft_us, cache_status = parse_stream(response, started_ns)
+            parsed = parse_stream(response, started_ns)
+            latency_us = parsed.completion_us or (time.perf_counter_ns() - started_ns) // 1000
+            return Sample(
+                status,
+                latency_us,
+                parsed.ttft_us,
+                parsed.cache_status,
+                parsed.error,
+                stream=True,
+                stream_chunks=parsed.chunks,
+                inter_chunk_us=parsed.inter_chunk_us,
+            )
         else:
             cache_status = str(response.getheader("X-LingShu-Cache", "UNKNOWN")).upper()
             payload = json.loads(response.read().decode("utf-8"))
@@ -235,6 +326,7 @@ def execute_request(
             ttft_us,
             cache_status,
             None,
+            stream=False,
         )
     except Exception as exception:
         client.reset()
@@ -244,6 +336,7 @@ def execute_request(
             None,
             "UNKNOWN",
             f"{type(exception).__name__}: {exception}",
+            stream=stream,
         )
 
 
@@ -516,6 +609,8 @@ def main() -> None:
         sampler.join()
 
     attempted = stats.successes + stats.errors
+    stream_attempted = stats.stream_successes + stats.stream_errors
+    non_stream_attempted = stats.non_stream_successes + stats.non_stream_errors
     result = {
         "configuration": {
             "url": args.url,
@@ -541,6 +636,40 @@ def main() -> None:
             "throughputRps": round(stats.successes / wall_seconds, 3) if wall_seconds else None,
             "latencyMs": stats.latency.summary(),
             "ttftMs": stats.ttft.summary(),
+            "streaming": {
+                "attempted": stream_attempted,
+                "successes": stats.stream_successes,
+                "errors": stats.stream_errors,
+                "successRatePercent": round(
+                    stats.stream_successes * 100 / stream_attempted, 5
+                ) if stream_attempted else None,
+                "completedRps": round(
+                    stats.stream_successes / wall_seconds, 3
+                ) if wall_seconds else None,
+                "endToEndLatencyMs": stats.stream_latency.summary(),
+                "ttftMs": stats.ttft.summary(),
+                "missingTtft": stats.stream_successes - stats.ttft.count,
+                "interChunkLatencyMs": stats.inter_chunk_latency.summary(),
+                "chunks": {
+                    "total": stats.stream_chunks,
+                    "averagePerSuccessfulStream": round(
+                        stats.stream_chunks / stats.stream_successes, 3
+                    ) if stats.stream_successes else None,
+                    "maxPerStream": stats.max_stream_chunks,
+                },
+            },
+            "nonStreaming": {
+                "attempted": non_stream_attempted,
+                "successes": stats.non_stream_successes,
+                "errors": stats.non_stream_errors,
+                "successRatePercent": round(
+                    stats.non_stream_successes * 100 / non_stream_attempted, 5
+                ) if non_stream_attempted else None,
+                "completedRps": round(
+                    stats.non_stream_successes / wall_seconds, 3
+                ) if wall_seconds else None,
+                "endToEndLatencyMs": stats.non_stream_latency.summary(),
+            },
             "cacheStatuses": dict(sorted(stats.cache_statuses.items())),
             "statusCodes": dict(sorted(stats.status_codes.items())),
             "errorTypes": dict(sorted(stats.error_types.items())),

@@ -2,6 +2,7 @@ package com.lingshu.core.billing;
 
 import com.lingshu.common.dto.CacheStatus;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.config.LingShuProperties;
 import com.lingshu.core.tenant.TenantPolicy;
 import com.lingshu.core.tenant.TenantPolicyService;
@@ -87,7 +88,7 @@ public class VirtualBillingService {
                 ? costCny(tenantId, response.inputTokens(), response.outputTokens())
                 : BigDecimal.ZERO;
         return applyCharge(tenantId, traceId, cost, response.inputTokens(), response.outputTokens(),
-                response.provider(), response.model(), cacheStatus, "SUCCESS");
+                response.provider(), response.model(), cacheStatus, "SUCCESS", response.usageSource());
     }
 
     public VirtualBillingCharge recordFailure(
@@ -107,7 +108,7 @@ public class VirtualBillingService {
                 ? costCny(tenantId, inputTokens, outputTokens)
                 : BigDecimal.ZERO;
         return applyCharge(tenantId, traceId, cost, inputTokens, outputTokens,
-                null, null, CacheStatus.MISS, "FAILED");
+                null, null, CacheStatus.MISS, "FAILED", TokenUsageSource.UNKNOWN);
     }
 
     public VirtualBillingCharge chargeForTrace(String traceId) {
@@ -166,7 +167,8 @@ public class VirtualBillingService {
             String provider,
             String model,
             CacheStatus cacheStatus,
-            String status
+            String status,
+            TokenUsageSource usageSource
     ) {
         if (tenantId == null || tenantId.isBlank()) {
             throw new IllegalArgumentException("tenantId must not be blank");
@@ -174,7 +176,7 @@ public class VirtualBillingService {
         if (store != null && traceId != null && !traceId.isBlank()) {
             VirtualBillingRecord persisted = store.recordAtomically(
                     new VirtualBillingRecord(traceId, tenantId, provider, model, cacheStatus, status,
-                            inputTokens, outputTokens, cost, BigDecimal.ZERO, Instant.now()),
+                            inputTokens, outputTokens, usageSource, cost, BigDecimal.ZERO, Instant.now()),
                     properties.getInitialBalanceCny()
             );
             VirtualBillingCharge charge = toCharge(persisted);
@@ -192,7 +194,8 @@ public class VirtualBillingService {
                 cost,
                 fromMicros(remainingMicros),
                 inputTokens,
-                outputTokens
+                outputTokens,
+                usageSource
         );
         if (traceId != null && !traceId.isBlank()) {
             chargesByTrace.put(traceId, charge);
@@ -220,7 +223,7 @@ public class VirtualBillingService {
 
     private VirtualBillingCharge toCharge(VirtualBillingRecord record) {
         return new VirtualBillingCharge(record.costCny(), record.remainingBalanceCny(),
-                record.inputTokens(), record.outputTokens());
+                record.inputTokens(), record.outputTokens(), record.usageSource());
     }
 
     private long toMicros(BigDecimal amount) {

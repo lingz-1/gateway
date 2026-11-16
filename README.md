@@ -59,6 +59,23 @@ Run the dependency-free mixed streaming/non-streaming load test against Gateway:
 
 Add `--warm-cache` and use a smaller prompt cardinality for an exact-cache baseline. The script reports throughput, latency P50/P95/P99, streaming TTFT P50/P95/P99, HTTP status codes, errors, and cache-result counts. The first recorded local baseline is documented in [`docs/performance-baseline.md`](docs/performance-baseline.md).
 
+Streaming validation uses a stricter contract than HTTP status alone: a stream is successful only when it receives `data: [DONE]` without an SSE error. The large-scale runner also reports streaming completion throughput, end-to-end latency, inter-chunk latency, chunk counts, and separate streaming/non-streaming success rates. Definitions, test scenarios, and current evidence are documented in [`docs/verification-matrix.md`](docs/verification-matrix.md), [`docs/streaming-validation.md`](docs/streaming-validation.md), [`docs/interview-evaluation-report.md`](docs/interview-evaluation-report.md), and [`docs/known-limitations.md`](docs/known-limitations.md).
+
+When a streaming provider omits usage, Core emits a deterministic local estimate and marks response metadata and virtual billing with `usageSource=ESTIMATED`; mixed reported/estimated totals use `MIXED`. Stream lifecycle metrics separately count completion, cancellation, timeout, upstream truncation/error, downstream write failure, and internal failure.
+
+Clients that need an unambiguous cancellation signal may call `POST /v1/stream-cancellations/{traceId}` with the same `X-Tenant-Id` used by the streaming request. The first accepted cancellation returns HTTP 202; repeated cancellation is idempotent. Single-instance development uses the in-memory registry. Multi-Core deployments enable Redis owner routing so a cancellation received by any Core is forwarded to the instance that owns the upstream stream:
+
+```powershell
+$env:LINGSHU_STREAM_ROUTING_STORE = "redis"
+$env:LINGSHU_STREAM_INSTANCE_ID = "core-a" # unique per instance
+$env:LINGSHU_STREAM_INSTANCE_BASE_URL = "http://core-a:8081"
+$env:LINGSHU_STREAM_OWNER_TTL = "5m" # must exceed the two-minute SSE timeout
+$env:LINGSHU_INTERNAL_ADMIN_KEY_ENABLED = "true"
+$env:LINGSHU_INTERNAL_ADMIN_KEY = "<shared-cluster-secret>"
+```
+
+Owner registration uses Redis `SET NX` with a TTL, preventing the same trace ID from being active on two instances. Inter-instance calls use `/internal/v1/stream-cancellations/{traceId}` and the shared internal key. Redis lookup or owner forwarding failures return HTTP 503 with `STREAM_ROUTING_UNAVAILABLE`; Core never reports a cancellation that it did not deliver. Reproduce the dual-Core SSE check with `scripts/test-cluster-stream-cancel.py` after starting Core A on port 18081 and Core B on 18082 with Redis routing enabled.
+
 For 10,000 to 1,000,000 request experiments, use the bounded-memory keep-alive runner. Benchmark mode restarts the Stub profile with per-request INFO logs disabled; choose whether exact caching is available before starting the run:
 
 ```powershell

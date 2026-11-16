@@ -5,6 +5,8 @@ import com.lingshu.common.contracts.ErrorCode;
 import com.lingshu.core.billing.VirtualBillingCharge;
 import com.lingshu.core.billing.VirtualBillingService;
 import com.lingshu.core.provider.ProviderRoutingException;
+import com.lingshu.core.streaming.StreamLifecycleConflictException;
+import com.lingshu.core.streaming.StreamRoutingUnavailableException;
 import com.lingshu.core.tenant.TenantPolicyViolationException;
 import com.lingshu.core.web.TraceIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -67,6 +69,27 @@ public class GlobalExceptionHandler {
         HttpStatus status = exception.rateLimited() ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.FORBIDDEN;
         ErrorCode code = exception.rateLimited() ? ErrorCode.RATE_LIMITED : ErrorCode.INVALID_REQUEST;
         return error(status, code, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(StreamLifecycleConflictException.class)
+    public ResponseEntity<ApiError> handleStreamConflict(
+            StreamLifecycleConflictException exception,
+            HttpServletRequest request
+    ) {
+        return error(HttpStatus.CONFLICT, ErrorCode.INVALID_REQUEST, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(StreamRoutingUnavailableException.class)
+    public ResponseEntity<ApiError> handleStreamRoutingUnavailable(
+            StreamRoutingUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                ErrorCode.STREAM_ROUTING_UNAVAILABLE,
+                exception.getMessage(),
+                request
+        );
     }
 
     @ExceptionHandler(Exception.class)

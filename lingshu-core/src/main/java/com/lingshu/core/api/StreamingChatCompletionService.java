@@ -4,7 +4,9 @@ import com.lingshu.common.dto.ChatCompletionRequest;
 import com.lingshu.common.dto.ChatCompletionResponse;
 import com.lingshu.common.dto.ProviderRequest;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.observability.LingShuMetrics;
+import com.lingshu.core.observability.StreamTerminationReason;
 import com.lingshu.core.processing.ChatProcessingContext;
 import com.lingshu.core.processing.ChatProcessingResult;
 import com.lingshu.core.processing.ChatProcessorEngine;
@@ -13,8 +15,11 @@ import com.lingshu.core.provider.ModelProvider;
 import com.lingshu.core.provider.ModelProviderRouter;
 import com.lingshu.core.provider.ProviderRoutingException;
 import com.lingshu.core.provider.ProviderStreamCancelledException;
+import com.lingshu.core.provider.ProviderStreamTruncatedException;
 import com.lingshu.core.provider.ProviderStreamConsumer;
 import com.lingshu.core.provider.ProviderUsageException;
+import com.lingshu.core.streaming.StreamLifecycle;
+import com.lingshu.core.streaming.StreamCancellationCoordinator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -41,30 +46,51 @@ public class StreamingChatCompletionService {
     private final ModelProviderRouter router;
     private final LingShuMetrics metrics;
     private final ExecutorService streamingExecutor;
+    private final StreamCancellationCoordinator cancellationCoordinator;
 
     public StreamingChatCompletionService(
             ChatCompletionService completionService,
             ChatProcessorEngine engine,
             ModelProviderRouter router,
             LingShuMetrics metrics,
-            ExecutorService streamingExecutor
+            ExecutorService streamingExecutor,
+            StreamCancellationCoordinator cancellationCoordinator
     ) {
         this.completionService = completionService;
         this.engine = engine;
         this.router = router;
         this.metrics = metrics;
         this.streamingExecutor = streamingExecutor;
+        this.cancellationCoordinator = cancellationCoordinator;
     }
 
     public SseEmitter stream(ChatCompletionRequest request, String traceId, String tenantId) {
+        StreamLifecycle lifecycle = cancellationCoordinator.open(traceId, tenantId);
         SseEmitter emitter = new SseEmitter(Duration.ofMinutes(2).toMillis());
         AtomicBoolean cancelled = new AtomicBoolean();
+        AtomicBoolean completedNormally = new AtomicBoolean();
         AtomicReference<Runnable> cancelUpstream = new AtomicReference<>();
-        emitter.onTimeout(() -> cancel(cancelled, cancelUpstream));
-        emitter.onError(ignored -> cancel(cancelled, cancelUpstream));
-        emitter.onCompletion(() -> cancel(cancelled, cancelUpstream));
-        streamingExecutor.submit(() -> emit(
-                request, traceId, tenantId, emitter, cancelled, cancelUpstream));
+        AtomicReference<StreamTerminationReason> terminationHint = new AtomicReference<>();
+        emitter.onTimeout(() -> terminateAndCancel(lifecycle, cancelled, cancelUpstream,
+                terminationHint, StreamTerminationReason.TIMEOUT));
+        emitter.onError(ignored -> terminateAndCancel(lifecycle, cancelled, cancelUpstream,
+                terminationHint, StreamTerminationReason.DOWNSTREAM_WRITE_FAILED));
+        emitter.onCompletion(() -> {
+            if (!completedNormally.get()) {
+                terminateAndCancel(lifecycle, cancelled, cancelUpstream,
+                        terminationHint, StreamTerminationReason.CLIENT_DISCONNECTED);
+            }
+        });
+        metrics.streamStarted();
+        try {
+            streamingExecutor.submit(() -> emit(
+                    request, traceId, tenantId, emitter, cancelled, completedNormally,
+                    cancelUpstream, terminationHint, lifecycle));
+        } catch (RuntimeException exception) {
+            cancellationCoordinator.finish(lifecycle, StreamTerminationReason.INTERNAL_ERROR);
+            metrics.streamFinished(StreamTerminationReason.INTERNAL_ERROR, 1);
+            throw exception;
+        }
         return emitter;
     }
 
@@ -74,9 +100,13 @@ public class StreamingChatCompletionService {
             String tenantId,
             SseEmitter emitter,
             AtomicBoolean cancelled,
-            AtomicReference<Runnable> cancelUpstream
+            AtomicBoolean completedNormally,
+            AtomicReference<Runnable> cancelUpstream,
+            AtomicReference<StreamTerminationReason> terminationHint,
+            StreamLifecycle lifecycle
     ) {
         long startedAt = System.nanoTime();
+        StreamTerminationReason terminationReason = StreamTerminationReason.INTERNAL_ERROR;
         String responseId = "chatcmpl-" + UUID.randomUUID().toString().replace("-", "");
         long created = Instant.now().getEpochSecond();
         ChatStreamingExecution execution = null;
@@ -88,7 +118,7 @@ public class StreamingChatCompletionService {
                 result = execution.completedResult();
                 ProviderResponse cachedResponse = result.context().providerResponse();
                 sendDelta(emitter, cancelled, responseId, created, cachedResponse.model(),
-                        cachedResponse.content());
+                        cachedResponse.content(), lifecycle);
                 metrics.timeToFirstToken(
                         tenantId,
                         cachedResponse.provider(),
@@ -98,25 +128,52 @@ public class StreamingChatCompletionService {
                 );
             } else {
                 ProviderResponse providerResponse = invokeProviderStream(
-                        execution.context(), emitter, cancelled, cancelUpstream, responseId, created, startedAt);
+                        execution.context(), emitter, cancelled, cancelUpstream, terminationHint,
+                        responseId, created, startedAt, lifecycle);
                 result = engine.finishStreaming(execution, providerResponse);
             }
             ChatCompletionResponse response = completionService.responseFrom(
                     result, traceId, tenantId, responseId, created);
             processingCompleted = true;
             sendFinal(emitter, response);
+            if (lifecycle.isCancelled()) {
+                throw cancelledException(null);
+            }
             emitter.send(SseEmitter.event().data("[DONE]"));
+            completedNormally.set(true);
+            terminationReason = StreamTerminationReason.COMPLETED;
+            lifecycle.terminate(StreamTerminationReason.COMPLETED, false);
             emitter.complete();
         } catch (ProviderStreamCancelledException exception) {
+            StreamTerminationReason hintedReason = terminationHint.get();
+            terminationReason = hintedReason != null
+                    ? hintedReason
+                    : StreamTerminationReason.DOWNSTREAM_WRITE_FAILED;
             if (execution != null) {
                 engine.abortStreaming(execution);
             }
             if (!processingCompleted) {
                 completionService.recordFailure(exception, traceId, tenantId, startedAt);
             }
+            if (lifecycle.termination() == StreamTerminationReason.CLIENT_CANCEL_REQUESTED) {
+                try {
+                    emitter.send(SseEmitter.event().name("error").data(Map.of(
+                            "code", "STREAM_CANCELLED",
+                            "message", "Streaming completion cancelled",
+                            "traceId", traceId
+                    )));
+                } catch (IOException ignored) {
+                    // The downstream connection may already be unavailable.
+                }
+                emitter.complete();
+            }
         } catch (IOException exception) {
+            terminationReason = StreamTerminationReason.DOWNSTREAM_WRITE_FAILED;
             emitter.completeWithError(exception);
         } catch (RuntimeException exception) {
+            terminationReason = isCausedByTruncation(exception)
+                    ? StreamTerminationReason.UPSTREAM_TRUNCATED
+                    : StreamTerminationReason.UPSTREAM_ERROR;
             if (execution != null) {
                 engine.abortStreaming(execution);
             }
@@ -135,6 +192,9 @@ public class StreamingChatCompletionService {
                 // The client connection is already unavailable.
             }
             emitter.completeWithError(exception);
+        } finally {
+            StreamTerminationReason finalReason = cancellationCoordinator.finish(lifecycle, terminationReason);
+            metrics.streamFinished(finalReason, System.nanoTime() - startedAt);
         }
     }
 
@@ -143,9 +203,11 @@ public class StreamingChatCompletionService {
             SseEmitter emitter,
             AtomicBoolean cancelled,
             AtomicReference<Runnable> cancelUpstream,
+            AtomicReference<StreamTerminationReason> terminationHint,
             String responseId,
             long created,
-            long requestStartedAt
+            long requestStartedAt,
+            StreamLifecycle lifecycle
     ) {
         ProviderRequest providerRequest = new ProviderRequest(
                 context.traceId(),
@@ -180,7 +242,7 @@ public class StreamingChatCompletionService {
                             return;
                         }
                         sendDelta(emitter, cancelled, responseId, created,
-                                context.request().model(), delta);
+                                context.request().model(), delta, lifecycle);
                         if (emitted.compareAndSet(false, true)) {
                             metrics.timeToFirstToken(
                                     context.tenantId(),
@@ -201,7 +263,7 @@ public class StreamingChatCompletionService {
                             String arguments
                     ) throws IOException {
                         sendToolCallDelta(emitter, cancelled, responseId, created,
-                                context.request().model(), index, id, type, name, arguments);
+                                context.request().model(), index, id, type, name, arguments, lifecycle);
                         if (emitted.compareAndSet(false, true)) {
                             metrics.timeToFirstToken(
                                     context.tenantId(),
@@ -215,18 +277,19 @@ public class StreamingChatCompletionService {
 
                     @Override
                     public void onOpen(Runnable cancellation) {
+                        lifecycle.attachUpstreamCancellation(cancellation);
                         cancelUpstream.set(cancellation);
-                        if (cancelled.get()) {
-                            cancel(cancelled, cancelUpstream);
+                        if (cancelled.get() || lifecycle.isCancelled()) {
+                            cancel(cancelled, cancelUpstream, terminationHint, null);
                         }
                     }
 
                     @Override
                     public boolean isCancelled() {
-                        return cancelled.get();
+                        return cancelled.get() || lifecycle.isCancelled();
                     }
                 });
-                if (cancelled.get()) {
+                if (cancelled.get() || lifecycle.isCancelled()) {
                     throw cancelledException(null);
                 }
                 router.recordSuccess(candidate, startedAt);
@@ -261,6 +324,7 @@ public class StreamingChatCompletionService {
                 lastFailure = exception;
             } finally {
                 cancelUpstream.set(null);
+                lifecycle.clearUpstreamCancellation();
             }
         }
         throw new ProviderRoutingException(
@@ -294,9 +358,10 @@ public class StreamingChatCompletionService {
             String responseId,
             long created,
             String model,
-            String delta
+            String delta,
+            StreamLifecycle lifecycle
     ) throws IOException {
-        if (cancelled.get()) {
+        if (cancelled.get() || lifecycle.isCancelled()) {
             throw cancelledException(null);
         }
         try {
@@ -343,9 +408,10 @@ public class StreamingChatCompletionService {
             String id,
             String type,
             String name,
-            String arguments
+            String arguments,
+            StreamLifecycle lifecycle
     ) throws IOException {
-        if (cancelled.get()) {
+        if (cancelled.get() || lifecycle.isCancelled()) {
             throw cancelledException(null);
         }
         Map<String, Object> function = new LinkedHashMap<>();
@@ -398,6 +464,7 @@ public class StreamingChatCompletionService {
                 response.content(),
                 response.inputTokens() + failedInputTokens,
                 response.outputTokens() + failedOutputTokens,
+                TokenUsageSource.MIXED,
                 response.finishReason(),
                 response.toolCalls()
         );
@@ -412,12 +479,39 @@ public class StreamingChatCompletionService {
 
     private void cancel(
             AtomicBoolean cancelled,
-            AtomicReference<Runnable> cancelUpstream
+            AtomicReference<Runnable> cancelUpstream,
+            AtomicReference<StreamTerminationReason> terminationHint,
+            StreamTerminationReason reason
     ) {
+        if (reason != null) {
+            terminationHint.compareAndSet(null, reason);
+        }
         cancelled.set(true);
         Runnable cancellation = cancelUpstream.getAndSet(null);
         if (cancellation != null) {
             cancellation.run();
         }
+    }
+
+    private void terminateAndCancel(
+            StreamLifecycle lifecycle,
+            AtomicBoolean cancelled,
+            AtomicReference<Runnable> cancelUpstream,
+            AtomicReference<StreamTerminationReason> terminationHint,
+            StreamTerminationReason reason
+    ) {
+        lifecycle.terminate(reason, true);
+        cancel(cancelled, cancelUpstream, terminationHint, reason);
+    }
+
+    private boolean isCausedByTruncation(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof ProviderStreamTruncatedException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

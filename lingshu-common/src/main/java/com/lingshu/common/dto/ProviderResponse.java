@@ -9,6 +9,7 @@ public record ProviderResponse(
         String content,
         int inputTokens,
         int outputTokens,
+        TokenUsageSource usageSource,
         String finishReason,
         List<ChatToolCall> toolCalls
 ) {
@@ -22,6 +23,7 @@ public record ProviderResponse(
         if (inputTokens < 0 || outputTokens < 0) {
             throw new IllegalArgumentException("token counts must not be negative");
         }
+        usageSource = usageSource == null ? TokenUsageSource.UNKNOWN : usageSource;
         if (finishReason == null || finishReason.isBlank()) {
             finishReason = "stop";
         }
@@ -33,9 +35,23 @@ public record ProviderResponse(
             String content,
             int inputTokens,
             int outputTokens,
+            String finishReason,
+            List<ChatToolCall> toolCalls
+    ) {
+        this(provider, model, content, inputTokens, outputTokens,
+                TokenUsageSource.PROVIDER_REPORTED, finishReason, toolCalls);
+    }
+
+    public ProviderResponse(
+            String provider,
+            String model,
+            String content,
+            int inputTokens,
+            int outputTokens,
             String finishReason
     ) {
-        this(provider, model, content, inputTokens, outputTokens, finishReason, List.of());
+        this(provider, model, content, inputTokens, outputTokens,
+                TokenUsageSource.PROVIDER_REPORTED, finishReason, List.of());
     }
 
     public ProviderResponse(
@@ -45,6 +61,7 @@ public record ProviderResponse(
             int inputTokens,
             int outputTokens
     ) {
-        this(provider, model, content, inputTokens, outputTokens, "stop", List.of());
+        this(provider, model, content, inputTokens, outputTokens,
+                TokenUsageSource.PROVIDER_REPORTED, "stop", List.of());
     }
 }

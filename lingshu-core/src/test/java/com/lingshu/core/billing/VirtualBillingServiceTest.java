@@ -2,6 +2,7 @@ package com.lingshu.core.billing;
 
 import com.lingshu.common.dto.CacheStatus;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.config.LingShuProperties;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +41,21 @@ class VirtualBillingServiceTest {
 
         assertEquals(0.0, charge.costCny().doubleValue());
         assertEquals(10.0, charge.remainingBalanceCny().doubleValue(), 0.000001);
+    }
+
+    @Test
+    void preservesEstimatedUsageSourceInCharge() {
+        VirtualBillingService service = new VirtualBillingService(new LingShuProperties());
+        ProviderResponse response = new ProviderResponse(
+                "deepseek", "deepseek-v4flash", "estimated", 7, 4,
+                TokenUsageSource.ESTIMATED, "stop", java.util.List.of()
+        );
+
+        VirtualBillingCharge charge = service.charge(
+                "tenant-estimated", "trace-estimated", response, CacheStatus.MISS
+        );
+
+        assertEquals(TokenUsageSource.ESTIMATED, charge.usageSource());
     }
 
     @Test

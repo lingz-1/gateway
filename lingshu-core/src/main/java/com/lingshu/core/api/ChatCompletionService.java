@@ -119,7 +119,9 @@ public class ChatCompletionService {
                 context.steps(),
                 billing.costCny(),
                 billing.remainingBalanceCny(),
-                context.providerAttempts()
+                context.providerAttempts(),
+                providerResponse.usageSource(),
+                providerResponse.usageSource().includesEstimate()
         );
 
         return new ChatCompletionResponse(

@@ -1,6 +1,7 @@
 package com.lingshu.core.cache;
 
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.config.LingShuProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -36,12 +37,12 @@ class RedisExactCacheStoreTest {
         store.put("hash", response);
         verify(values).set(
                 RedisExactCacheStore.KEY_PREFIX + "hash",
-                "{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1,\"finishReason\":\"length\",\"toolCalls\":[]}",
+                "{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1,\"usageSource\":\"PROVIDER_REPORTED\",\"finishReason\":\"length\",\"toolCalls\":[]}",
                 Duration.ofMinutes(3)
         );
 
         when(values.get(RedisExactCacheStore.KEY_PREFIX + "hash"))
-                .thenReturn("{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1,\"finishReason\":\"length\"}");
+                .thenReturn("{\"provider\":\"stub\",\"model\":\"stub-echo-v1\",\"content\":\"answer\",\"inputTokens\":2,\"outputTokens\":1,\"usageSource\":\"PROVIDER_REPORTED\",\"finishReason\":\"length\"}");
         assertEquals(response, store.get("hash").orElseThrow());
     }
 
@@ -60,7 +61,9 @@ class RedisExactCacheStoreTest {
                 new LingShuProperties()
         );
 
-        assertEquals("stop", store.get("legacy").orElseThrow().finishReason());
+        ProviderResponse response = store.get("legacy").orElseThrow();
+        assertEquals("stop", response.finishReason());
+        assertEquals(TokenUsageSource.UNKNOWN, response.usageSource());
     }
 
     @Test

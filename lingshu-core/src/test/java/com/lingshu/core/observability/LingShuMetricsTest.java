@@ -65,6 +65,24 @@ class LingShuMetricsTest {
                 .timer().totalTime(TimeUnit.MILLISECONDS));
     }
 
+    @Test
+    void recordsStreamTerminationReasonAndActiveGauge() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        LingShuMetrics metrics = new LingShuMetrics(registry);
+
+        metrics.streamStarted();
+        assertEquals(1.0, registry.get("lingshu.chat.streams.active").gauge().value());
+
+        metrics.streamFinished(StreamTerminationReason.UPSTREAM_TRUNCATED,
+                TimeUnit.MILLISECONDS.toNanos(30));
+
+        assertEquals(0.0, registry.get("lingshu.chat.streams.active").gauge().value());
+        assertEquals(1.0, registry.get("lingshu.chat.streams.terminated")
+                .tag("reason", "upstream_truncated").counter().count());
+        assertEquals(30.0, registry.get("lingshu.chat.stream.duration")
+                .tag("reason", "upstream_truncated").timer().totalTime(TimeUnit.MILLISECONDS));
+    }
+
     private VirtualBillingCharge charge() {
         return new VirtualBillingCharge(
                 new BigDecimal("0.01"),

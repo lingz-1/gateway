@@ -2,6 +2,7 @@ package com.lingshu.core.provider;
 
 import com.lingshu.common.dto.ProviderRequest;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.common.dto.ChatFunctionCall;
 import com.lingshu.common.dto.ChatMessage;
 import com.lingshu.common.dto.ChatToolCall;
@@ -151,7 +152,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                     int priorOutput = accumulatedOutputTokens - parsed.outputTokens();
                     return new ProviderResponse(parsed.provider(), parsed.model(), parsed.content(),
                             parsed.inputTokens() + priorInput, parsed.outputTokens() + priorOutput,
-                            parsed.finishReason(), parsed.toolCalls());
+                            parsed.usageSource(), parsed.finishReason(), parsed.toolCalls());
                 }
                 if (isRetryable(response.statusCode()) && attempt < maxAttempts) {
                     pauseBeforeRetry(attempt);
@@ -265,12 +266,20 @@ public class DeepSeekModelProvider implements ModelProvider {
                     int outputTokens = stream.usageReported
                             ? stream.outputTokens
                             : estimateTokens(stream.generatedText());
+                    TokenUsageSource usageSource = stream.usageReported
+                            ? TokenUsageSource.PROVIDER_REPORTED
+                            : TokenUsageSource.ESTIMATED;
+                    if ((accumulatedInputTokens > 0 || accumulatedOutputTokens > 0)
+                            && usageSource != TokenUsageSource.PROVIDER_REPORTED) {
+                        usageSource = TokenUsageSource.MIXED;
+                    }
                     return new ProviderResponse(
                             providerId,
                             model,
                             content,
                             inputTokens + accumulatedInputTokens,
                             outputTokens + accumulatedOutputTokens,
+                            usageSource,
                             stream.finishReason,
                             stream.toolCalls()
                     );
@@ -481,6 +490,7 @@ public class DeepSeekModelProvider implements ModelProvider {
                     stream.usageReported = true;
                 }
             }
+            throw new ProviderStreamTruncatedException(providerId + " stream closed before [DONE]");
         }
     }
 

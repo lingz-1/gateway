@@ -51,6 +51,13 @@ lingshu:
   security:
     internal-admin-key-enabled: ${LINGSHU_INTERNAL_ADMIN_KEY_ENABLED:false}
     internal-admin-key: ${LINGSHU_INTERNAL_ADMIN_KEY:}
+  streaming:
+    routing-store: ${LINGSHU_STREAM_ROUTING_STORE:memory}
+    instance-id: ${LINGSHU_STREAM_INSTANCE_ID:local}
+    instance-base-url: ${LINGSHU_STREAM_INSTANCE_BASE_URL:http://127.0.0.1:${server.port}}
+    redis-key-prefix: ${LINGSHU_STREAM_REDIS_KEY_PREFIX:lingshu:stream-owner:}
+    owner-ttl: ${LINGSHU_STREAM_OWNER_TTL:5m}
+    forward-timeout: ${LINGSHU_STREAM_FORWARD_TIMEOUT:2s}
   cache:
     exact:
       enabled: ${LINGSHU_CACHE_EXACT_ENABLED:true}
@@ -77,6 +84,10 @@ lingshu:
     stub:
       enabled: true
       model: ${LINGSHU_STUB_MODEL:stub-echo-v1}
+      stream-delay: ${LINGSHU_STUB_STREAM_DELAY:0ms}
+      stream-chunks: ${LINGSHU_STUB_STREAM_CHUNKS:1}
+      stream-failure-mode: ${LINGSHU_STUB_STREAM_FAILURE_MODE:none}
+      stream-failure-after-chunks: ${LINGSHU_STUB_STREAM_FAILURE_AFTER_CHUNKS:1}
     fast-stub:
       enabled: true
       model: ${LINGSHU_FAST_STUB_MODEL:stub-fast-v1}

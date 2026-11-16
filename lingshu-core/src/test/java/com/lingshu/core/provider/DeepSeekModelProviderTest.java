@@ -6,11 +6,13 @@ import com.lingshu.common.dto.ChatFunctionDefinition;
 import com.lingshu.common.dto.ChatTool;
 import com.lingshu.common.dto.ProviderRequest;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.config.LingShuProperties;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -262,6 +264,22 @@ class DeepSeekModelProviderTest {
         assertEquals("hello", response.content());
         assertEquals(3, response.inputTokens());
         assertEquals(2, response.outputTokens());
+        assertEquals(TokenUsageSource.ESTIMATED, response.usageSource());
+    }
+
+    @Test
+    void rejectsProviderStreamClosedWithoutDone() {
+        responseBody.set("data: {\"choices\":[{\"delta\":{\"content\":\"partial\"},"
+                + "\"finish_reason\":\"stop\"}]}\n\n");
+        List<String> deltas = new CopyOnWriteArrayList<>();
+
+        ProviderStreamTruncatedException exception = assertThrows(
+                ProviderStreamTruncatedException.class,
+                () -> provider().stream(request("trace-incomplete-stream"), deltas::add)
+        );
+
+        assertEquals(List.of("partial"), deltas);
+        assertTrue(exception.getMessage().contains("closed before [DONE]"));
     }
 
     @Test
@@ -345,7 +363,7 @@ class DeepSeekModelProviderTest {
         assertTrue(exception.getMessage().contains("API key"));
     }
 
-    @Test
+    @RepeatedTest(value = 30, name = "retry-{currentRepetition}")
     void retriesTransientFailureAndAccumulatesReportedUsage() {
         failuresBeforeSuccess.set(1);
         LingShuProperties properties = properties();
@@ -362,7 +380,7 @@ class DeepSeekModelProviderTest {
         assertEquals(5, response.outputTokens());
     }
 
-    @Test
+    @RepeatedTest(value = 30, name = "circuit-open-{currentRepetition}")
     void opensCircuitAfterConfiguredFailureThreshold() {
         responseStatus.set(500);
         LingShuProperties properties = properties();
@@ -375,6 +393,33 @@ class DeepSeekModelProviderTest {
         assertEquals(ProviderHealth.Status.DOWN, provider.health().status());
         assertThrows(ProviderRoutingException.class, () -> provider.invoke(
                 request("trace-circuit-2")));
+    }
+
+    @RepeatedTest(value = 30, name = "circuit-recovery-{currentRepetition}")
+    void recoversAfterCircuitOpenDuration() throws InterruptedException {
+        responseStatus.set(500);
+        LingShuProperties properties = properties();
+        properties.getProvider().getDeepseek().setMaxAttempts(1);
+        properties.getProvider().getDeepseek().setCircuitFailureThreshold(1);
+        properties.getProvider().getDeepseek().setCircuitOpenDuration(java.time.Duration.ofMillis(20));
+        DeepSeekModelProvider provider = new DeepSeekModelProvider(
+                properties, objectMapper, HttpClient.newHttpClient());
+
+        assertThrows(ProviderUsageException.class, () -> provider.invoke(
+                request("trace-recovery-failure")));
+        int requestsAfterFailure = requestCount.get();
+        assertEquals(ProviderHealth.Status.DOWN, provider.health().status());
+        assertThrows(ProviderRoutingException.class, () -> provider.invoke(
+                request("trace-recovery-open")));
+        assertEquals(requestsAfterFailure, requestCount.get());
+
+        responseStatus.set(200);
+        Thread.sleep(30);
+        ProviderResponse response = provider.invoke(request("trace-recovery-success"));
+
+        assertEquals("hello from deepseek", response.content());
+        assertEquals(requestsAfterFailure + 1, requestCount.get());
+        assertEquals(ProviderHealth.Status.UP, provider.health().status());
     }
 
     private DeepSeekModelProvider provider() {

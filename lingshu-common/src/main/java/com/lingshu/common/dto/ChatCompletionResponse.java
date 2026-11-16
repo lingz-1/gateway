@@ -36,7 +36,9 @@ public record ChatCompletionResponse(
             List<ProcessingStep> processors,
             BigDecimal virtualCostCny,
             BigDecimal virtualRemainingBalanceCny,
-            List<String> providerAttempts
+            List<String> providerAttempts,
+            TokenUsageSource usageSource,
+            boolean usageEstimated
     ) {
     }
 }

@@ -1,6 +1,7 @@
 package com.lingshu.core.billing;
 
 import com.lingshu.common.dto.CacheStatus;
+import com.lingshu.common.dto.TokenUsageSource;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -71,8 +72,8 @@ public class JdbcVirtualBillingStore implements VirtualBillingStore {
         String insertUsage = """
                 INSERT INTO lingshu_virtual_billing_usage
                     (trace_id, tenant_id, provider, model, cache_status, status,
-                     input_tokens, output_tokens, cost_cny, remaining_balance_cny, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     input_tokens, output_tokens, usage_source, cost_cny, remaining_balance_cny, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (trace_id) DO NOTHING
                 """;
         try (Connection connection = dataSource.getConnection()) {
@@ -108,7 +109,7 @@ public class JdbcVirtualBillingStore implements VirtualBillingStore {
             VirtualBillingRecord record = new VirtualBillingRecord(
                     proposed.traceId(), proposed.tenantId(), proposed.provider(), proposed.model(),
                     proposed.cacheStatus(), proposed.status(), proposed.inputTokens(), proposed.outputTokens(),
-                    proposed.costCny(), remainingBalance, proposed.createdAt());
+                    proposed.usageSource(), proposed.costCny(), remainingBalance, proposed.createdAt());
             try (PreparedStatement usage = connection.prepareStatement(insertUsage)) {
                 usage.setString(1, record.traceId());
                 usage.setString(2, record.tenantId());
@@ -118,9 +119,10 @@ public class JdbcVirtualBillingStore implements VirtualBillingStore {
                 usage.setString(6, record.status());
                 usage.setInt(7, record.inputTokens());
                 usage.setInt(8, record.outputTokens());
-                usage.setBigDecimal(9, record.costCny());
-                usage.setBigDecimal(10, record.remainingBalanceCny());
-                usage.setTimestamp(11, Timestamp.from(record.createdAt()));
+                usage.setString(9, record.usageSource().name());
+                usage.setBigDecimal(10, record.costCny());
+                usage.setBigDecimal(11, record.remainingBalanceCny());
+                usage.setTimestamp(12, Timestamp.from(record.createdAt()));
                 int inserted = usage.executeUpdate();
                 if (inserted != 1) {
                     throw new IllegalStateException("Virtual billing trace was not inserted");
@@ -212,6 +214,7 @@ public class JdbcVirtualBillingStore implements VirtualBillingStore {
                 resultSet.getString("provider"), resultSet.getString("model"),
                 cache == null ? null : CacheStatus.valueOf(cache), resultSet.getString("status"),
                 resultSet.getInt("input_tokens"), resultSet.getInt("output_tokens"),
+                TokenUsageSource.valueOf(resultSet.getString("usage_source")),
                 resultSet.getBigDecimal("cost_cny"), resultSet.getBigDecimal("remaining_balance_cny"),
                 resultSet.getTimestamp("created_at").toInstant());
     }

@@ -1,6 +1,7 @@
 package com.lingshu.core.billing;
 
 import com.lingshu.common.dto.CacheStatus;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
@@ -89,12 +90,14 @@ class JdbcVirtualBillingStoreIntegrationTest {
         assertEquals(first.traceId(), duplicate.traceId());
         assertEquals(first.costCny(), duplicate.costCny());
         assertEquals(first.remainingBalanceCny(), duplicate.remainingBalanceCny());
+        assertEquals(TokenUsageSource.ESTIMATED, duplicate.usageSource());
         assertEquals(new BigDecimal("9.790000000"), store.getOrCreateBalance(tenantId, new BigDecimal("10.00")));
         assertEquals(requestCount + 1, store.summary(tenantId, BigDecimal.ZERO).totalRequests());
     }
 
     private static VirtualBillingRecord record(String traceId, BigDecimal cost) {
         return new VirtualBillingRecord(traceId, tenantId, "stub", "stub-echo-v1", CacheStatus.MISS,
-                "SUCCESS", 1, 1, cost, BigDecimal.ZERO, Instant.now());
+                "SUCCESS", 1, 1, TokenUsageSource.ESTIMATED,
+                cost, BigDecimal.ZERO, Instant.now());
     }
 }

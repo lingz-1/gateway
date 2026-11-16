@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "outputRoot": "E:\\LingShuData\\evaluations",
+  "suites": [
+    {
+      "id": "stream-fallback-30",
+      "description": "Fail before the first business delta and fall back without mixed content.",
+      "repeat": 30,
+      "service": {
+        "restartEachIteration": true,
+        "environment": {
+          "LINGSHU_STUB_MODEL": "stream-fault-model",
+          "LINGSHU_FAST_STUB_MODEL": "stream-fault-model",
+          "LINGSHU_STUB_STREAM_FAILURE_MODE": "before-first"
+        },
+        "startArgs": ["-Cache", "Off"]
+      },
+      "test": {
+        "script": "scripts/test-stream-faults.py",
+        "args": ["--scenario", "fallback"],
+        "timeoutSeconds": 20
+      }
+    },
+    {
+      "id": "stream-truncation-30",
+      "description": "Truncate after two deltas and require an SSE error without fallback or DONE.",
+      "repeat": 30,
+      "service": {
+        "environment": {
+          "LINGSHU_STUB_MODEL": "stream-fault-model",
+          "LINGSHU_FAST_STUB_MODEL": "stub-fast-v1",
+          "LINGSHU_STUB_STREAM_CHUNKS": "5",
+          "LINGSHU_STUB_STREAM_DELAY": "20ms",
+          "LINGSHU_STUB_STREAM_FAILURE_MODE": "truncate-after-chunks",
+          "LINGSHU_STUB_STREAM_FAILURE_AFTER_CHUNKS": "2"
+        },
+        "startArgs": ["-Cache", "Off"]
+      },
+      "test": {
+        "script": "scripts/test-stream-faults.py",
+        "args": ["--scenario", "truncation"],
+        "timeoutSeconds": 20
+      }
+    },
+    {
+      "id": "stream-cancellation-30",
+      "description": "Cancel a slow stream and verify idempotent duplicate cancellation.",
+      "repeat": 30,
+      "service": {
+        "environment": {
+          "LINGSHU_STUB_MODEL": "stub-echo-v1",
+          "LINGSHU_FAST_STUB_MODEL": "stub-fast-v1",
+          "LINGSHU_STUB_STREAM_CHUNKS": "5",
+          "LINGSHU_STUB_STREAM_DELAY": "200ms",
+          "LINGSHU_STUB_STREAM_FAILURE_MODE": "none"
+        },
+        "startArgs": ["-Cache", "Off"]
+      },
+      "test": {
+        "script": "scripts/test-cluster-stream-cancel.py",
+        "args": [
+          "--stream-core", "http://127.0.0.1:8080",
+          "--cancel-core", "http://127.0.0.1:8080"
+        ],
+        "timeoutSeconds": 20,
+        "metrics": ["cancelRequestLatencyMs", "streamStoppedAfterCancelMs"]
+      }
+    },
+    {
+      "id": "provider-resilience-30",
+      "description": "Repeat transient retry, circuit opening, and post-cooldown recovery thirty times each.",
+      "repeat": 1,
+      "test": {
+        "script": "scripts/test-provider-resilience.py",
+        "timeoutSeconds": 90
+      }
+    },
+    {
+      "id": "budget-consistency",
+      "description": "Verify concurrent Redis reservations, idempotent ledger transitions, and atomic virtual balances.",
+      "repeat": 1,
+      "test": {
+        "script": "scripts/test-budget-consistency.py",
+        "timeoutSeconds": 120
+      }
+    }
+  ]
+}
