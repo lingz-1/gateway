@@ -25,7 +25,7 @@ public class SemanticCacheConfiguration {
         config.setMaximumPoolSize(semantic.getMaximumPoolSize());
         config.setMinimumIdle(0);
         config.setConnectionTimeout(3_000);
-        config.setInitializationFailTimeout(5_000);
+        config.setInitializationFailTimeout(-1);
         return new HikariDataSource(config);
     }
 }

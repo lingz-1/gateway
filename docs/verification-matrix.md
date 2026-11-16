@@ -17,7 +17,7 @@
 | 非流式端到端延迟 | 客户端发出请求至完整 JSON 响应读取完毕的时间 | 压测客户端 | 实测 |
 | ITL | 同一响应相邻有效内容/工具调用数据块到达客户端的间隔 | 压测客户端 | 五分块慢速Stub三轮实测 |
 | 流式完成吞吐 | 正常收到 `[DONE]` 的流数量/测试墙钟时间 | 压测客户端 | 万级三轮实测 |
-| 缓存命中率 | `EXACT` 或 `SEMANTIC` 完成请求数/可参与缓存的完成请求数 | 响应 metadata 与服务端指标 | 部分实测 |
+| 缓存命中率 | `EXACT` 或 `SEMANTIC` 完成请求数/可参与缓存的完成请求数 | 响应 metadata 与轻量 Runner | 三种模式各 3 轮实测；两级缓存 37.5% |
 | Provider 尝试失败率 | 失败的 Provider 尝试次数/全部 Provider 尝试次数，重试和 fallback 分别计次 | Provider 尝试级指标 | 未实现 |
 | Usage来源 | `PROVIDER_REPORTED`、`ESTIMATED`、`MIXED`或`UNKNOWN`；估算值不得表述为Provider实际账单 | API metadata、账务记录与`lingshu_chat_usage_requests_total` | 单测已验证 |
 | 流终止原因 | 完成、显式取消、连接断开、超时、上游截断/错误、下游写失败、内部错误分别计数 | `lingshu_chat_streams_terminated_total{reason}` | 单测已验证；显式取消和上游截断已完成进程实测 |
@@ -26,7 +26,9 @@
 | 故障恢复时间 | 从故障注入时刻到连续成功率、延迟恢复至验收阈值的时间 | 故障脚本、压测时间线与 Prometheus | 未验证 |
 | 流式P0批量故障 | Fallback、截断、显式取消各重复30次 | 轻量Runner、逐轮JSON | 三组均30/30通过 |
 | Provider P0容错 | 重试、熔断打开、冷却恢复各重复30次 | 本地HTTP桩、Surefire报告 | 三组均30/30通过；非真实DeepSeek |
-| 预算P0一致性 | Redis并发预扣/重复reservation、JDBC并发结算/Outbox、虚拟余额 | 真实Redis/PostgreSQL集成测试 | 全部通过；不包含实际Token差额结算 |
+| 预算P0一致性 | Redis并发预扣/重复reservation、实际 Token 差额结算、JDBC/Outbox、虚拟余额 | 真实Redis/PostgreSQL集成测试 | 全部通过；预算服务尚未自动接入聊天 Processor |
+| 语义缓存准确性 | 240 对合成正负样本、阈值 0.75～0.98 扫描 | 本地 Qwen3-Embedding-4B | 0.79 工作点 Precision 100%、Recall 40%、FPR 0%；非生产样本 |
+| 两级缓存对照 | 无缓存、Redis 精确、Redis + pgvector，同一 120 请求各 3 轮 | 本地进程 + 真实 Redis/pgvector + 40 ms Stub | 9/9 通过；命中率 0%/25%/37.5% |
 
 ## 流式专项矩阵
 

@@ -1,5 +1,6 @@
 package com.lingshu.core.billing;
 
+import com.lingshu.common.dto.TokenUsageSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
@@ -15,6 +16,7 @@ import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -87,7 +89,36 @@ class JdbcBudgetLedgerIntegrationTest {
         assertSingleTransition("RELEASED", () -> ledger.release(reservationIds.getFirst()));
     }
 
+    @RepeatedTest(value = 10, name = "ledger-settle-{currentRepetition}")
+    void concurrentSettlementIsIdempotentAndCreatesOneActualUsageEvent() throws Exception {
+        String reservationId = recordReservation();
+
+        List<Optional<BudgetSettlement>> results = runConcurrentSettlements(30, () ->
+                ledger.settle(reservationId, 60, TokenUsageSource.MIXED)
+        );
+
+        assertEquals(30, results.stream().filter(Optional::isPresent).count());
+        assertEquals("CONFIRMED", ledgerStatus(reservationId));
+        assertEquals(1, outboxCount(reservationId, "CONFIRMED"));
+        assertEquals("60:MIXED", settlementValues(reservationId));
+        assertEquals("60:MIXED", outboxValues(reservationId));
+        assertEquals(Optional.empty(), ledger.settle(
+                reservationId, 61, TokenUsageSource.MIXED
+        ));
+    }
+
     private void assertSingleTransition(String expectedStatus, Supplier<Boolean> transition) throws Exception {
+        String reservationId = recordReservation();
+
+        List<Boolean> results = runConcurrent(30, transition);
+
+        assertEquals(1, results.stream().filter(Boolean::booleanValue).count());
+        assertEquals(expectedStatus, ledgerStatus(reservationId));
+        assertEquals(1, outboxCount(reservationId, expectedStatus));
+        assertFalse(transition.get());
+    }
+
+    private String recordReservation() {
         String reservationId = "budget-ledger-it-" + UUID.randomUUID();
         reservationIds.add(reservationId);
         ledger.recordReservation(new BudgetReservation(
@@ -97,13 +128,7 @@ class JdbcBudgetLedgerIntegrationTest {
                 Instant.now().plusSeconds(300),
                 BudgetReservationStatus.PENDING
         ));
-
-        List<Boolean> results = runConcurrent(30, transition);
-
-        assertEquals(1, results.stream().filter(Boolean::booleanValue).count());
-        assertEquals(expectedStatus, ledgerStatus(reservationId));
-        assertEquals(1, outboxCount(reservationId, expectedStatus));
-        assertFalse(transition.get());
+        return reservationId;
     }
 
     private List<Boolean> runConcurrent(int tasks, Supplier<Boolean> action) throws Exception {
@@ -120,6 +145,31 @@ class JdbcBudgetLedgerIntegrationTest {
             start.countDown();
             List<Boolean> results = new ArrayList<>();
             for (Future<Boolean> future : futures) {
+                results.add(future.get());
+            }
+            return results;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private List<Optional<BudgetSettlement>> runConcurrentSettlements(
+            int tasks,
+            Supplier<Optional<BudgetSettlement>> action
+    ) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(tasks);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Optional<BudgetSettlement>>> futures = new ArrayList<>();
+            for (int index = 0; index < tasks; index++) {
+                futures.add(executor.submit(() -> {
+                    start.await();
+                    return action.get();
+                }));
+            }
+            start.countDown();
+            List<Optional<BudgetSettlement>> results = new ArrayList<>();
+            for (Future<Optional<BudgetSettlement>> future : futures) {
                 results.add(future.get());
             }
             return results;
@@ -147,6 +197,28 @@ class JdbcBudgetLedgerIntegrationTest {
             try (ResultSet resultSet = statement.executeQuery()) {
                 resultSet.next();
                 return resultSet.getInt(1);
+            }
+        }
+    }
+
+    private String settlementValues(String reservationId) throws Exception {
+        try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(
+                "SELECT actual_units, usage_source FROM lingshu_budget_ledger WHERE reservation_id = ?")) {
+            statement.setString(1, reservationId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getLong(1) + ":" + resultSet.getString(2);
+            }
+        }
+    }
+
+    private String outboxValues(String reservationId) throws Exception {
+        try (Connection connection = dataSource.getConnection(); PreparedStatement statement = connection.prepareStatement(
+                "SELECT units, usage_source FROM lingshu_budget_outbox WHERE reservation_id = ?")) {
+            statement.setString(1, reservationId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getLong(1) + ":" + resultSet.getString(2);
             }
         }
     }

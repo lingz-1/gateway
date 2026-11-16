@@ -76,6 +76,8 @@ def main() -> int:
         "com.lingshu.core.billing.RedisBudgetReservationStoreIntegrationTest",
         "com.lingshu.core.billing.JdbcBudgetLedgerIntegrationTest",
         "com.lingshu.core.billing.JdbcVirtualBillingStoreIntegrationTest",
+        "com.lingshu.core.billing.BudgetReservationServiceTest",
+        "com.lingshu.core.billing.BudgetSettlementIntegrationTest",
     ))
     if reports_available:
         redis_root, redis_names = read_report(
@@ -84,39 +86,74 @@ def main() -> int:
             repo, "com.lingshu.core.billing.JdbcBudgetLedgerIntegrationTest")
         virtual_root, virtual_names = read_report(
             repo, "com.lingshu.core.billing.JdbcVirtualBillingStoreIntegrationTest")
+        service_root, service_names = read_report(
+            repo, "com.lingshu.core.billing.BudgetReservationServiceTest")
+        settlement_root, settlement_names = read_report(
+            repo, "com.lingshu.core.billing.BudgetSettlementIntegrationTest")
         redis_concurrency = count_method(
             redis_names, "concurrentReservationsNeverOverspendAndSettlementsRemainIdempotent")
         redis_duplicates = count_method(
             redis_names, "concurrentDuplicateReservationDebitsAndReleasesOnlyOnce")
+        redis_delta_settlements = count_method(
+            redis_names, "concurrentDeltaSettlementAdjustsBalanceOnceAndPreservesUsageSource")
         ledger_confirms = count_method(
             ledger_names, "concurrentConfirmCreatesOneTransitionAndOneOutboxEvent")
         ledger_releases = count_method(
             ledger_names, "concurrentReleaseCreatesOneTransitionAndOneOutboxEvent")
+        ledger_settlements = count_method(
+            ledger_names, "concurrentSettlementIsIdempotentAndCreatesOneActualUsageEvent")
         virtual_atomic = sum(
             1 for name in virtual_names
             if name.startswith("chargesAtomicallyAcrossConcurrentRequestsAndDeduplicatesTrace")
         )
+        recovery_tests = sum(1 for name in service_names if name in {
+            "databaseFailureDoesNotChangeRedisBalance",
+            "retriesRedisAfterLedgerAlreadyPersistedSettlement",
+        })
+        usage_source_tests = sum(1 for name in service_names if name in {
+            "settlesActualUsageAndReleasesDifference",
+            "settlesOverageAndPreservesEstimatedUsageSource",
+            "retriesRedisAfterLedgerAlreadyPersistedSettlement",
+        })
+        vertical_settlement_tests = sum(1 for name in settlement_names if name in {
+            "reservesSettlesActualUsageAndReleasesDifferenceAcrossRedisAndPostgres",
+            "settlesOverageAndPreservesEstimatedUsageSource",
+            "concurrentDuplicateSettlementChangesBalanceOnceAndCreatesOneOutboxEvent",
+        })
     else:
-        redis_root = ledger_root = virtual_root = ElementTree.Element(
+        redis_root = ledger_root = virtual_root = service_root = settlement_root = ElementTree.Element(
             "testsuite", {"failures": "-1", "errors": "-1"})
-        redis_concurrency = redis_duplicates = ledger_confirms = ledger_releases = virtual_atomic = 0
+        redis_concurrency = redis_duplicates = redis_delta_settlements = 0
+        ledger_confirms = ledger_releases = ledger_settlements = virtual_atomic = 0
+        recovery_tests = usage_source_tests = 0
+        vertical_settlement_tests = 0
 
     checks = {
         "containers_ready": compose_result.returncode == 0,
         "maven_verify_succeeded": maven_result is not None and maven_result.returncode == 0,
         "redis_concurrency_repeated_10_times": redis_concurrency == 10,
         "redis_duplicate_replay_repeated_10_times": redis_duplicates == 10,
+        "redis_delta_settlement_repeated_10_times": redis_delta_settlements == 10,
         "ledger_confirm_repeated_10_times": ledger_confirms == 10,
         "ledger_release_repeated_10_times": ledger_releases == 10,
+        "ledger_actual_settlement_repeated_10_times": ledger_settlements == 10,
+        "database_failure_recovery_verified": recovery_tests == 2,
+        "usage_sources_preserved": usage_source_tests == 3,
+        "redis_postgres_vertical_settlement_verified": vertical_settlement_tests == 3,
         "virtual_balance_atomicity_verified": virtual_atomic == 1,
         "budget_reports_have_no_failures": all(passed(root) for root in (
-            redis_root, ledger_root, virtual_root)),
+            redis_root, ledger_root, virtual_root, service_root, settlement_root)),
     }
     result = {
         "redisConcurrencyRepetitions": redis_concurrency,
         "redisDuplicateRepetitions": redis_duplicates,
+        "redisDeltaSettlementRepetitions": redis_delta_settlements,
         "ledgerConfirmRepetitions": ledger_confirms,
         "ledgerReleaseRepetitions": ledger_releases,
+        "ledgerActualSettlementRepetitions": ledger_settlements,
+        "databaseRecoveryTests": recovery_tests,
+        "usageSourceTests": usage_source_tests,
+        "verticalSettlementTests": vertical_settlement_tests,
         "virtualBalanceAtomicityTests": virtual_atomic,
         "checks": checks,
     }

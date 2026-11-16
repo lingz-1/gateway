@@ -247,8 +247,15 @@ def main() -> int:
         environment = {str(key): str(value) for key, value in service.get("environment", {}).items()}
         restart_each_iteration = bool(service.get("restartEachIteration", False))
         start_command = powershell_command(
-            repo, "scripts/start-benchmark.ps1", service.get("startArgs", []))
-        stop_command = powershell_command(repo, "scripts/stop-local.ps1", [])
+            repo,
+            service.get("startScript", "scripts/start-benchmark.ps1"),
+            service.get("startArgs", []),
+        )
+        stop_command = powershell_command(
+            repo,
+            service.get("stopScript", "scripts/stop-local.ps1"),
+            service.get("stopArgs", []),
+        )
         starts: list[dict[str, Any]] = []
         stops: list[dict[str, Any]] = []
         if not manages_service:
@@ -264,7 +271,7 @@ def main() -> int:
             starts.append(run_command(
                 start_command,
                 repo,
-                90,
+                int(service.get("startTimeoutSeconds", 90)),
                 environment,
                 capture_output=False,
             ))
@@ -277,7 +284,7 @@ def main() -> int:
                     starts.append(run_command(
                         start_command,
                         repo,
-                        90,
+                        int(service.get("startTimeoutSeconds", 90)),
                         environment,
                         capture_output=False,
                     ))

@@ -21,13 +21,14 @@
 ## 缓存与语义评估
 
 - 29.6% 的 P95 降幅来自本地内存精确缓存和 Stub Provider，不代表 Redis或语义缓存收益。
-- 语义缓存目前只有小样本离线阈值评估，不能给出生产误命中率结论。
-- 语义缓存收益取决于Embedding延迟、Provider延迟、命中率和误命中成本，需要单独对照测试。
+- 新增的 240 对样本阈值扫描和三种模式各 3 轮对照均为合成中文样本、40 ms Stub Provider 和本机依赖结果，不能给出真实业务 Prompt 的生产误命中率结论。
+- 保守阈值 0.79 的离线 Precision 为 100%、Recall 为 40%、FPR 为 0%；固定端到端样本的语义正样本命中率为 50%、负样本误命中率为 0%。样本构造偏差仍然存在。
+- 语义未命中路径 P50 比无缓存增加约 45.238 ms；在本轮 37.5% 总命中率下，总体 P50/P95 反而升高。语义缓存只有在 Provider 延迟和实际命中率足以摊薄 Embedding/pgvector 开销时才有总体收益。
 
 ## 预算、消息与配置
 
-- 当前预算链路尚未实现按实际 Token 的差额释放/补扣，不能描述为完整实际用量结算。
-- Redis原子预扣、重复reservation、Ledger并发确认/释放与Outbox唯一事件已完成真实Redis/PostgreSQL集成测试；尚未验证Redis或PostgreSQL在两阶段操作中途故障时的跨依赖一致性。
+- 预算领域链路已实现按实际 Token 差额释放/补扣，并在真实 Redis/PostgreSQL 上验证；但尚未自动接入聊天 Processor，默认请求链仍使用虚拟计费，不能描述为“每次请求已执行预算预扣”。
+- PostgreSQL 成功而 Redis 更新失败时可通过相同结算重试收敛，但尚无自动对账/补偿 Worker；持续依赖故障下仍需人工或调用方重试。
 - Redis reservation TTL与Ledger到期扫描使用相同到期基准，依赖故障或扫描延迟下是否能可靠返还过期预扣仍需专项验证。
 - Provider缺失usage时会保留`ESTIMATED`来源，但估算Token仍不等于Provider实际账单，后续结算需要账单对账或Provider usage回补。
 - `usage_source`已在本地PostgreSQL 16完成Flyway V2→V4升级和JDBC读写验证，但尚未在生产快照或大数据量迁移场景验证锁等待与迁移耗时。

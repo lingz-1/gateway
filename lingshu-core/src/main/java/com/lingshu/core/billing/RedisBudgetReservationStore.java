@@ -1,5 +1,6 @@
 package com.lingshu.core.billing;
 
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.config.LingShuProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -45,6 +46,29 @@ public class RedisBudgetReservationStore implements BudgetReservationStore {
             end
             if status == 'CONFIRMED' then return 2 end
             return 0
+            """);
+
+    private static final DefaultRedisScript<Long> SETTLE_SCRIPT = script("""
+            local status = redis.call('HGET', KEYS[1], 'status')
+            if status == 'CONFIRMED' then
+              local actual = redis.call('HGET', KEYS[1], 'actual_units')
+              local source = redis.call('HGET', KEYS[1], 'usage_source')
+              if actual == ARGV[1] and source == ARGV[2] then return 2 end
+              return 0
+            end
+            if status ~= 'PENDING' then return 0 end
+            local reserved = tonumber(redis.call('HGET', KEYS[1], 'units'))
+            local tenant = redis.call('HGET', KEYS[1], 'tenant_id')
+            local actual = tonumber(ARGV[1])
+            if not reserved or not tenant or not actual or actual < 0 then return 0 end
+            local released = reserved - actual
+            redis.call('INCRBY', KEYS[2] .. tenant, released)
+            redis.call('HSET', KEYS[1],
+              'status', 'CONFIRMED',
+              'actual_units', ARGV[1],
+              'usage_source', ARGV[2],
+              'released_units', tostring(released))
+            return 1
             """);
 
     private static final DefaultRedisScript<Long> RELEASE_SCRIPT = script("""
@@ -107,6 +131,17 @@ public class RedisBudgetReservationStore implements BudgetReservationStore {
     }
 
     @Override
+    public boolean settle(String reservationId, long actualUnits, TokenUsageSource usageSource) {
+        validateSettlement(reservationId, actualUnits, usageSource);
+        Long result = redisTemplate.execute(
+                SETTLE_SCRIPT,
+                List.of(reservationKey(reservationId), balancePrefix()),
+                Long.toString(actualUnits), usageSource.name()
+        );
+        return result != null && (result == 1 || result == 2);
+    }
+
+    @Override
     public boolean release(String reservationId) {
         if (reservationId == null || reservationId.isBlank()) {
             throw new IllegalArgumentException("reservationId must not be blank");
@@ -139,6 +174,22 @@ public class RedisBudgetReservationStore implements BudgetReservationStore {
         }
         if (units <= 0) {
             throw new IllegalArgumentException("reservation units must be positive");
+        }
+    }
+
+    private void validateSettlement(
+            String reservationId,
+            long actualUnits,
+            TokenUsageSource usageSource
+    ) {
+        if (reservationId == null || reservationId.isBlank()) {
+            throw new IllegalArgumentException("reservationId must not be blank");
+        }
+        if (actualUnits < 0) {
+            throw new IllegalArgumentException("actual units must not be negative");
+        }
+        if (usageSource == null || usageSource == TokenUsageSource.UNKNOWN) {
+            throw new IllegalArgumentException("usageSource must be known");
         }
     }
 

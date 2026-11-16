@@ -660,6 +660,7 @@ public class LingShuProperties {
 
         private boolean enabled = true;
         private String model = "stub-echo-v1";
+        private java.time.Duration invokeDelay = java.time.Duration.ZERO;
         private java.time.Duration streamDelay = java.time.Duration.ZERO;
         private int streamChunks = 1;
         private String streamFailureMode = "none";
@@ -679,6 +680,14 @@ public class LingShuProperties {
 
         public void setModel(String model) {
             this.model = model;
+        }
+
+        public java.time.Duration getInvokeDelay() {
+            return invokeDelay;
+        }
+
+        public void setInvokeDelay(java.time.Duration invokeDelay) {
+            this.invokeDelay = invokeDelay;
         }
 
         public java.time.Duration getStreamDelay() {

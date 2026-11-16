@@ -34,7 +34,8 @@ public class JdbcBudgetOutboxStore implements BudgetOutboxStore {
             SET claim_token = ?, claimed_at = CURRENT_TIMESTAMP
             WHERE outbox.event_id IN (SELECT event_id FROM candidates)
             RETURNING outbox.event_id, outbox.reservation_id, outbox.event_type,
-                      outbox.tenant_id, outbox.units, outbox.created_at, outbox.claim_token
+                      outbox.tenant_id, outbox.units, outbox.usage_source,
+                      outbox.created_at, outbox.claim_token
             """;
 
     private static final String MARK_PUBLISHED_SQL = """
@@ -83,6 +84,9 @@ public class JdbcBudgetOutboxStore implements BudgetOutboxStore {
                             resultSet.getString("event_type"),
                             resultSet.getString("tenant_id"),
                             resultSet.getLong("units"),
+                            com.lingshu.common.dto.TokenUsageSource.valueOf(
+                                    resultSet.getString("usage_source")
+                            ),
                             resultSet.getTimestamp("created_at").toInstant(),
                             resultSet.getString("claim_token")
                     ));

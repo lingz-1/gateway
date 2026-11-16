@@ -1,5 +1,6 @@
 package com.lingshu.core.billing;
 
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.config.LingShuProperties;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -131,6 +132,43 @@ class RedisBudgetReservationStoreIntegrationTest {
 
         assertEquals("90", redisTemplate.opsForValue().get(store.balanceKey("tenant-a")));
         assertEquals("100", redisTemplate.opsForValue().get(store.balanceKey("tenant-b")));
+    }
+
+    @RepeatedTest(value = 10, name = "budget-delta-settlement-{currentRepetition}")
+    void concurrentDeltaSettlementAdjustsBalanceOnceAndPreservesUsageSource() throws Exception {
+        String tenantId = "tenant-delta";
+        String reservationId = "reservation-delta";
+        redisTemplate.opsForValue().set(store.balanceKey(tenantId), "1000");
+        assertTrue(store.reserve(tenantId, reservationId, 100));
+
+        assertTrue(runConcurrent(64, ignored -> store.settle(
+                reservationId, 60, TokenUsageSource.PROVIDER_REPORTED
+        )).stream().allMatch(Boolean::booleanValue));
+
+        assertEquals("940", redisTemplate.opsForValue().get(store.balanceKey(tenantId)));
+        assertEquals("60", redisTemplate.opsForHash().get(
+                store.reservationKey(reservationId), "actual_units"
+        ));
+        assertEquals("PROVIDER_REPORTED", redisTemplate.opsForHash().get(
+                store.reservationKey(reservationId), "usage_source"
+        ));
+        assertFalse(store.settle(reservationId, 61, TokenUsageSource.PROVIDER_REPORTED));
+        assertEquals("940", redisTemplate.opsForValue().get(store.balanceKey(tenantId)));
+    }
+
+    @Test
+    void overageSettlementDebitsDifferenceAndCanCreateDebt() {
+        String tenantId = "tenant-overage";
+        String reservationId = "reservation-overage";
+        redisTemplate.opsForValue().set(store.balanceKey(tenantId), "100");
+        assertTrue(store.reserve(tenantId, reservationId, 80));
+
+        assertTrue(store.settle(reservationId, 130, TokenUsageSource.ESTIMATED));
+
+        assertEquals("-30", redisTemplate.opsForValue().get(store.balanceKey(tenantId)));
+        assertEquals("-50", redisTemplate.opsForHash().get(
+                store.reservationKey(reservationId), "released_units"
+        ));
     }
 
     private List<Boolean> runConcurrent(int tasks, IntFunction<Boolean> action) throws Exception {

@@ -181,13 +181,20 @@ Core also includes a disabled-by-default OpenAI Chat Completions provider using 
 
 Virtual billing is enabled by default for development. Each tenant starts with a virtual CNY 10.00 balance. A cache miss is charged from the provider-reported input/output token usage; exact and semantic cache hits cost CNY 0. Failed requests with provider-reported usage are charged by that usage, while failures without usage are recorded as CNY 0. Set `LINGSHU_VIRTUAL_BILLING_PERSISTENCE_ENABLED=true` to persist accounts and usage records in PostgreSQL; the default remains an in-memory ledger for zero-dependency tests. Query persisted development data at `/internal/billing/tenants/{tenantId}` and `/internal/billing/tenants/{tenantId}/usage`. This does not call a billing API or enable Redis budget enforcement. A real DeepSeek request can still consume the external DeepSeek API quota, so use the stub provider for zero-cost local tests.
 
-Evaluate the local semantic-cache threshold with the checked-in Chinese sample set:
+Generate the deterministic 240-pair synthetic Chinese dataset and evaluate the local semantic-cache threshold:
 
 ```powershell
+.\scripts\python.ps1 .\scripts\generate-semantic-eval-dataset.py
 .\scripts\evaluate-semantic-threshold.ps1
 ```
 
 The wrapper always invokes `lingshu-dev`; the dataset and report default to the `datasets` and `logs` directories below `LINGSHU_DATA_ROOT`.
+
+Run the same 120-request cache-effect workload against no cache, Redis exact cache, and Redis plus pgvector semantic cache for three rounds each:
+
+```powershell
+.\scripts\python.ps1 .\scripts\run-evaluation.py --suite cache-off-3 --suite cache-redis-exact-3 --suite cache-redis-semantic-3
+```
 
 API key authentication is disabled by default. Enable it with `LINGSHU_GATEWAY_API_KEY_ENABLED=true` and provide the key through `LINGSHU_GATEWAY_API_KEY`. No external API key or infrastructure service is required for the verification build.
 

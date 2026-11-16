@@ -1,5 +1,6 @@
 package com.lingshu.core.billing;
 
+import com.lingshu.common.dto.TokenUsageSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -12,6 +13,7 @@ import java.sql.SQLException;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 @ConditionalOnProperty(
@@ -40,11 +42,29 @@ public class JdbcBudgetLedger implements BudgetLedger {
             WHERE reservation_id = ? AND status = 'PENDING'
             """;
 
+    private static final String SETTLE_SQL = """
+            UPDATE lingshu_budget_ledger
+            SET status = 'CONFIRMED',
+                actual_units = ?,
+                released_units = units - ?,
+                usage_source = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE reservation_id = ? AND status = 'PENDING'
+            RETURNING reservation_id, tenant_id, units, actual_units, released_units, usage_source
+            """;
+
+    private static final String FIND_SETTLEMENT_SQL = """
+            SELECT reservation_id, tenant_id, units, actual_units, released_units, usage_source
+            FROM lingshu_budget_ledger
+            WHERE reservation_id = ? AND status = 'CONFIRMED'
+            """;
+
     private static final String OUTBOX_SQL = """
             INSERT INTO lingshu_budget_outbox (
-                reservation_id, event_type, tenant_id, units
+                reservation_id, event_type, tenant_id, units, usage_source
             )
-            SELECT reservation_id, ?, tenant_id, units
+            SELECT reservation_id, ?, tenant_id, COALESCE(actual_units, units),
+                   COALESCE(usage_source, 'UNKNOWN')
             FROM lingshu_budget_ledger
             WHERE reservation_id = ?
             ON CONFLICT (reservation_id, event_type) DO NOTHING
@@ -86,6 +106,47 @@ public class JdbcBudgetLedger implements BudgetLedger {
     }
 
     @Override
+    public Optional<BudgetSettlement> settle(
+            String reservationId,
+            long actualUnits,
+            TokenUsageSource usageSource
+    ) {
+        if (reservationId == null || reservationId.isBlank()) {
+            throw new IllegalArgumentException("reservationId must not be blank");
+        }
+        if (actualUnits < 0) {
+            throw new IllegalArgumentException("actual units must not be negative");
+        }
+        if (usageSource == null || usageSource == TokenUsageSource.UNKNOWN) {
+            throw new IllegalArgumentException("usageSource must be known");
+        }
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                BudgetSettlement settlement = updateSettlement(
+                        connection, reservationId, actualUnits, usageSource
+                );
+                if (settlement != null) {
+                    insertOutbox(connection, reservationId, "CONFIRMED");
+                    connection.commit();
+                    return Optional.of(settlement);
+                }
+                connection.rollback();
+            } catch (SQLException exception) {
+                connection.rollback();
+                throw exception;
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Cannot settle budget reservation", exception);
+        }
+        Optional<BudgetSettlement> existing = findSettlement(reservationId);
+        return existing.filter(settlement ->
+                settlement.actualUnits() == actualUnits
+                        && settlement.usageSource() == usageSource
+        );
+    }
+
+    @Override
     public boolean release(String reservationId) {
         return transition(reservationId, RELEASE_SQL, "RELEASED");
     }
@@ -114,11 +175,7 @@ public class JdbcBudgetLedger implements BudgetLedger {
                 transition.setString(1, reservationId);
                 int updated = transition.executeUpdate();
                 if (updated == 1) {
-                    try (PreparedStatement outbox = connection.prepareStatement(OUTBOX_SQL)) {
-                        outbox.setString(1, eventType);
-                        outbox.setString(2, reservationId);
-                        outbox.executeUpdate();
-                    }
+                    insertOutbox(connection, reservationId, eventType);
                     connection.commit();
                     return true;
                 }
@@ -130,6 +187,58 @@ public class JdbcBudgetLedger implements BudgetLedger {
             }
         } catch (SQLException exception) {
             throw new IllegalStateException("Cannot transition budget reservation", exception);
+        }
+    }
+
+    private BudgetSettlement updateSettlement(
+            Connection connection,
+            String reservationId,
+            long actualUnits,
+            TokenUsageSource usageSource
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(SETTLE_SQL)) {
+            statement.setLong(1, actualUnits);
+            statement.setLong(2, actualUnits);
+            statement.setString(3, usageSource.name());
+            statement.setString(4, reservationId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? settlement(resultSet) : null;
+            }
+        }
+    }
+
+    private Optional<BudgetSettlement> findSettlement(String reservationId) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(FIND_SETTLEMENT_SQL)) {
+            statement.setString(1, reservationId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? Optional.of(settlement(resultSet)) : Optional.empty();
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Cannot read budget settlement", exception);
+        }
+    }
+
+    private BudgetSettlement settlement(ResultSet resultSet) throws SQLException {
+        return new BudgetSettlement(
+                resultSet.getString("reservation_id"),
+                resultSet.getString("tenant_id"),
+                resultSet.getLong("units"),
+                resultSet.getLong("actual_units"),
+                resultSet.getLong("released_units"),
+                TokenUsageSource.valueOf(resultSet.getString("usage_source"))
+        );
+    }
+
+    private void insertOutbox(
+            Connection connection,
+            String reservationId,
+            String eventType
+    ) throws SQLException {
+        try (PreparedStatement outbox = connection.prepareStatement(OUTBOX_SQL)) {
+            outbox.setString(1, eventType);
+            outbox.setString(2, reservationId);
+            outbox.executeUpdate();
         }
     }
 }

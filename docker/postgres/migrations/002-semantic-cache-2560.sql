@@ -22,12 +22,17 @@ CREATE INDEX IF NOT EXISTS idx_lingshu_semantic_cache_2560_embedding_hnsw
     ON lingshu_semantic_cache_2560
     USING hnsw (embedding halfvec_cosine_ops);
 
-INSERT INTO lingshu_semantic_cache_2560 (
-    tenant_id, scope_key, model, prompt_version, request_hash,
-    request_text, embedding, response_json, created_at, expires_at
-)
-SELECT tenant_id, scope_key, model, prompt_version, request_hash,
-       request_text, embedding::halfvec, response_json, created_at, expires_at
-FROM lingshu_semantic_cache
-WHERE vector_dims(embedding) = 2560
-ON CONFLICT (tenant_id, scope_key, request_hash) DO NOTHING;
+DO $migration$
+BEGIN
+    IF to_regclass('public.lingshu_semantic_cache') IS NOT NULL THEN
+        INSERT INTO lingshu_semantic_cache_2560 (
+            tenant_id, scope_key, model, prompt_version, request_hash,
+            request_text, embedding, response_json, created_at, expires_at
+        )
+        SELECT tenant_id, scope_key, model, prompt_version, request_hash,
+               request_text, embedding::halfvec, response_json, created_at, expires_at
+        FROM lingshu_semantic_cache
+        WHERE vector_dims(embedding) = 2560
+        ON CONFLICT (tenant_id, scope_key, request_hash) DO NOTHING;
+    END IF;
+END $migration$;

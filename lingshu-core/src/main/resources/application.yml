@@ -84,6 +84,7 @@ lingshu:
     stub:
       enabled: true
       model: ${LINGSHU_STUB_MODEL:stub-echo-v1}
+      invoke-delay: ${LINGSHU_STUB_INVOKE_DELAY:0ms}
       stream-delay: ${LINGSHU_STUB_STREAM_DELAY:0ms}
       stream-chunks: ${LINGSHU_STUB_STREAM_CHUNKS:1}
       stream-failure-mode: ${LINGSHU_STUB_STREAM_FAILURE_MODE:none}

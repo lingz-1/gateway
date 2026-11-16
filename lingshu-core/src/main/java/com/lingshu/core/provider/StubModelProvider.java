@@ -23,6 +23,7 @@ public class StubModelProvider implements ModelProvider {
     private static final String PROVIDER_ID = "stub";
 
     private final String model;
+    private final Duration invokeDelay;
     private final Duration streamDelay;
     private final int streamChunks;
     private final StreamFailureMode streamFailureMode;
@@ -30,14 +31,16 @@ public class StubModelProvider implements ModelProvider {
 
     public StubModelProvider(LingShuProperties properties) {
         this.model = properties.getProvider().getStub().getModel();
+        this.invokeDelay = properties.getProvider().getStub().getInvokeDelay();
         this.streamDelay = properties.getProvider().getStub().getStreamDelay();
         this.streamChunks = properties.getProvider().getStub().getStreamChunks();
         this.streamFailureMode = StreamFailureMode.parse(
                 properties.getProvider().getStub().getStreamFailureMode()
         );
         this.streamFailureAfterChunks = properties.getProvider().getStub().getStreamFailureAfterChunks();
-        if (streamDelay == null || streamDelay.isNegative()) {
-            throw new IllegalArgumentException("Stub stream delay must not be negative");
+        if (invokeDelay == null || invokeDelay.isNegative()
+                || streamDelay == null || streamDelay.isNegative()) {
+            throw new IllegalArgumentException("Stub delays must not be negative");
         }
         if (streamChunks <= 0) {
             throw new IllegalArgumentException("Stub stream chunks must be positive");
@@ -59,6 +62,14 @@ public class StubModelProvider implements ModelProvider {
 
     @Override
     public ProviderResponse invoke(ProviderRequest request) {
+        if (!invokeDelay.isZero()) {
+            try {
+                Thread.sleep(invokeDelay);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Stub invocation was interrupted", exception);
+            }
+        }
         String content = "stub:" + request.prompt();
         return new ProviderResponse(
                 PROVIDER_ID,

@@ -1,5 +1,7 @@
 package com.lingshu.core.billing;
 
+import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.config.LingShuProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -70,6 +72,45 @@ public class BudgetReservationService {
         }
         reservationStore.confirm(reservationId);
         return true;
+    }
+
+    public BudgetSettlement settle(String reservationId, ProviderResponse response) {
+        if (response == null) {
+            throw new IllegalArgumentException("response must not be null");
+        }
+        return settle(
+                reservationId,
+                (long) response.inputTokens() + response.outputTokens(),
+                response.usageSource()
+        );
+    }
+
+    public BudgetSettlement settle(
+            String reservationId,
+            long actualUnits,
+            TokenUsageSource usageSource
+    ) {
+        if (reservationId == null || reservationId.isBlank()) {
+            throw new IllegalArgumentException("reservationId must not be blank");
+        }
+        if (actualUnits < 0) {
+            throw new IllegalArgumentException("actual units must not be negative");
+        }
+        if (usageSource != TokenUsageSource.PROVIDER_REPORTED
+                && usageSource != TokenUsageSource.ESTIMATED
+                && usageSource != TokenUsageSource.MIXED) {
+            throw new IllegalArgumentException("usageSource must describe actual or estimated usage");
+        }
+        BudgetSettlement settlement = ledger.settle(reservationId, actualUnits, usageSource)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Budget reservation cannot be settled or conflicts with an existing settlement"
+                ));
+        if (!reservationStore.settle(reservationId, actualUnits, usageSource)) {
+            throw new IllegalStateException(
+                    "Budget ledger settled but Redis balance has not converged; retry the same settlement"
+            );
+        }
+        return settlement;
     }
 
     public boolean release(String reservationId) {

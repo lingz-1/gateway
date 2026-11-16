@@ -4,6 +4,8 @@ import com.lingshu.common.dto.ProviderResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
 
 import javax.sql.DataSource;
@@ -15,6 +17,7 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
 
@@ -26,6 +29,7 @@ import java.util.stream.DoubleStream;
 )
 public class PgVectorSemanticCacheStore implements SemanticCacheStore {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(PgVectorSemanticCacheStore.class);
     private static final int PRODUCTION_EMBEDDING_DIMENSION = 2560;
 
     private static final String FIND_SQL = """
@@ -57,6 +61,7 @@ public class PgVectorSemanticCacheStore implements SemanticCacheStore {
 
     private final DataSource dataSource;
     private final ObjectMapper objectMapper;
+    private final AtomicBoolean schemaInitialized = new AtomicBoolean();
 
     public PgVectorSemanticCacheStore(
             @Qualifier("semanticCacheDataSource") DataSource dataSource,
@@ -64,7 +69,7 @@ public class PgVectorSemanticCacheStore implements SemanticCacheStore {
     ) {
         this.dataSource = dataSource;
         this.objectMapper = objectMapper;
-        initializeSchema();
+        tryInitializeSchema();
     }
 
     @Override
@@ -74,6 +79,7 @@ public class PgVectorSemanticCacheStore implements SemanticCacheStore {
             double[] embedding,
             double similarityThreshold
     ) {
+        ensureSchema();
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(FIND_SQL)) {
             statement.setString(1, vectorLiteral(embedding));
@@ -97,6 +103,7 @@ public class PgVectorSemanticCacheStore implements SemanticCacheStore {
 
     @Override
     public void put(SemanticCacheEntry entry) {
+        ensureSchema();
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(PUT_SQL)) {
             statement.setString(1, entry.tenantId());
@@ -114,7 +121,18 @@ public class PgVectorSemanticCacheStore implements SemanticCacheStore {
         }
     }
 
-    private void initializeSchema() {
+    private void tryInitializeSchema() {
+        try {
+            ensureSchema();
+        } catch (RuntimeException exception) {
+            LOGGER.warn("pgvector schema is unavailable; semantic cache will fail open", exception);
+        }
+    }
+
+    private synchronized void ensureSchema() {
+        if (schemaInitialized.get()) {
+            return;
+        }
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement()) {
             statement.execute("CREATE EXTENSION IF NOT EXISTS vector");
@@ -144,16 +162,23 @@ public class PgVectorSemanticCacheStore implements SemanticCacheStore {
                     USING hnsw (embedding halfvec_cosine_ops)
                     """);
             statement.execute("""
-                    INSERT INTO lingshu_semantic_cache_2560 (
-                        tenant_id, scope_key, model, prompt_version, request_hash,
-                        request_text, embedding, response_json, created_at, expires_at
-                    )
-                    SELECT tenant_id, scope_key, model, prompt_version, request_hash,
-                           request_text, embedding::halfvec, response_json, created_at, expires_at
-                    FROM lingshu_semantic_cache
-                    WHERE vector_dims(embedding) = 2560
-                    ON CONFLICT (tenant_id, scope_key, request_hash) DO NOTHING
+                    DO $migration$
+                    BEGIN
+                        IF to_regclass('public.lingshu_semantic_cache') IS NOT NULL THEN
+                            INSERT INTO lingshu_semantic_cache_2560 (
+                                tenant_id, scope_key, model, prompt_version, request_hash,
+                                request_text, embedding, response_json, created_at, expires_at
+                            )
+                            SELECT tenant_id, scope_key, model, prompt_version, request_hash,
+                                   request_text, embedding::halfvec, response_json,
+                                   created_at, expires_at
+                            FROM lingshu_semantic_cache
+                            WHERE vector_dims(embedding) = 2560
+                            ON CONFLICT (tenant_id, scope_key, request_hash) DO NOTHING;
+                        END IF;
+                    END $migration$;
                     """);
+            schemaInitialized.set(true);
         } catch (SQLException exception) {
             throw new IllegalStateException("Cannot initialize pgvector semantic cache schema", exception);
         }

@@ -3,6 +3,92 @@
   "outputRoot": "E:\\LingShuData\\evaluations",
   "suites": [
     {
+      "id": "semantic-dataset-240",
+      "description": "Generate 120 positive and 120 negative deterministic synthetic semantic-cache pairs.",
+      "repeat": 1,
+      "test": {
+        "script": "scripts/generate-semantic-eval-dataset.py",
+        "timeoutSeconds": 30
+      }
+    },
+    {
+      "id": "semantic-threshold-scan",
+      "description": "Scan Qwen3-Embedding-4B similarity thresholds on 240 labelled synthetic pairs.",
+      "repeat": 1,
+      "service": {
+        "startScript": "scripts/start-cache-evaluation.ps1",
+        "startArgs": ["-Mode", "Semantic"],
+        "startTimeoutSeconds": 300
+      },
+      "test": {
+        "script": "scripts/evaluate_semantic_threshold.py",
+        "timeoutSeconds": 300,
+        "metrics": [
+          "recommended.precision",
+          "recommended.recall",
+          "recommended.falseHitRate",
+          "recommended.falsePositiveRate",
+          "embeddingLatencyMs.p50",
+          "embeddingLatencyMs.p95"
+        ]
+      }
+    },
+    {
+      "id": "cache-off-3",
+      "description": "Run the common 120-request set with both cache levels disabled.",
+      "repeat": 3,
+      "service": {
+        "startScript": "scripts/start-cache-evaluation.ps1",
+        "startArgs": ["-Mode", "Off"]
+      },
+      "test": {
+        "script": "scripts/test-cache-effect.py",
+        "args": ["--mode", "off"],
+        "timeoutSeconds": 90,
+        "metrics": ["hitRate", "providerCallReduction", "latencyMs.p50", "latencyMs.p95", "providerPathLatencyMs.p50"]
+      }
+    },
+    {
+      "id": "cache-redis-exact-3",
+      "description": "Run the common 120-request set with Redis exact cache for three rounds.",
+      "repeat": 3,
+      "service": {
+        "startScript": "scripts/start-cache-evaluation.ps1",
+        "startArgs": ["-Mode", "Exact"]
+      },
+      "test": {
+        "script": "scripts/test-cache-effect.py",
+        "args": ["--mode", "exact"],
+        "timeoutSeconds": 90,
+        "metrics": ["hitRate", "providerCallReduction", "latencyMs.p50", "latencyMs.p95", "cacheHitLatencyMs.p50", "providerPathLatencyMs.p50"]
+      }
+    },
+    {
+      "id": "cache-redis-semantic-3",
+      "description": "Run the common 120-request set with Redis exact plus Qwen/pgvector semantic cache for three rounds.",
+      "repeat": 3,
+      "service": {
+        "startScript": "scripts/start-cache-evaluation.ps1",
+        "startArgs": ["-Mode", "Semantic"],
+        "startTimeoutSeconds": 300
+      },
+      "test": {
+        "script": "scripts/test-cache-effect.py",
+        "args": ["--mode", "semantic"],
+        "timeoutSeconds": 300,
+        "metrics": ["hitRate", "providerCallReduction", "latencyMs.p50", "latencyMs.p95", "cacheHitLatencyMs.p50", "providerPathLatencyMs.p50", "semanticPositiveHitRate", "semanticFalseHitRate"]
+      }
+    },
+    {
+      "id": "cache-fail-open",
+      "description": "Verify cache applicability, isolation, and Redis/Embedding/pgvector fail-open behavior with fault injection.",
+      "repeat": 1,
+      "test": {
+        "script": "scripts/test-cache-fail-open.py",
+        "timeoutSeconds": 120
+      }
+    },
+    {
       "id": "stream-fallback-30",
       "description": "Fail before the first business delta and fall back without mixed content.",
       "repeat": 30,
