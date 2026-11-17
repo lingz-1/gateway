@@ -67,7 +67,7 @@ if ($Mode -ne "Off") {
         exit $LASTEXITCODE
     }
     if ($Mode -eq "Semantic") {
-        Wait-Health "Embedding" "http://127.0.0.1:8090/health" 180
+        Wait-Health "Embedding" "http://127.0.0.1:8090/health" 360
     }
 }
 

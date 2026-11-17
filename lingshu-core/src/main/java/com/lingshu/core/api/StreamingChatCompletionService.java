@@ -81,14 +81,24 @@ public class StreamingChatCompletionService {
                         terminationHint, StreamTerminationReason.CLIENT_DISCONNECTED);
             }
         });
-        metrics.streamStarted();
+        ChatStreamingExecution execution = null;
+        boolean streamStarted = false;
         try {
+            execution = engine.prepareStreaming(request, traceId, tenantId);
+            metrics.streamStarted();
+            streamStarted = true;
+            ChatStreamingExecution preparedExecution = execution;
             streamingExecutor.submit(() -> emit(
                     request, traceId, tenantId, emitter, cancelled, completedNormally,
-                    cancelUpstream, terminationHint, lifecycle));
+                    cancelUpstream, terminationHint, lifecycle, preparedExecution));
         } catch (RuntimeException exception) {
+            if (execution != null && !execution.completed()) {
+                engine.abortStreaming(execution, exception);
+            }
             cancellationCoordinator.finish(lifecycle, StreamTerminationReason.INTERNAL_ERROR);
-            metrics.streamFinished(StreamTerminationReason.INTERNAL_ERROR, 1);
+            if (streamStarted) {
+                metrics.streamFinished(StreamTerminationReason.INTERNAL_ERROR, 1);
+            }
             throw exception;
         }
         return emitter;
@@ -103,16 +113,15 @@ public class StreamingChatCompletionService {
             AtomicBoolean completedNormally,
             AtomicReference<Runnable> cancelUpstream,
             AtomicReference<StreamTerminationReason> terminationHint,
-            StreamLifecycle lifecycle
+            StreamLifecycle lifecycle,
+            ChatStreamingExecution execution
     ) {
         long startedAt = System.nanoTime();
         StreamTerminationReason terminationReason = StreamTerminationReason.INTERNAL_ERROR;
         String responseId = "chatcmpl-" + UUID.randomUUID().toString().replace("-", "");
         long created = Instant.now().getEpochSecond();
-        ChatStreamingExecution execution = null;
         boolean processingCompleted = false;
         try {
-            execution = engine.prepareStreaming(request, traceId, tenantId);
             ChatProcessingResult result;
             if (execution.completed()) {
                 result = execution.completedResult();
@@ -145,27 +154,34 @@ public class StreamingChatCompletionService {
             lifecycle.terminate(StreamTerminationReason.COMPLETED, false);
             emitter.complete();
         } catch (ProviderStreamCancelledException exception) {
-            StreamTerminationReason hintedReason = terminationHint.get();
-            terminationReason = hintedReason != null
-                    ? hintedReason
-                    : StreamTerminationReason.DOWNSTREAM_WRITE_FAILED;
-            if (execution != null) {
-                engine.abortStreaming(execution);
-            }
-            if (!processingCompleted) {
-                completionService.recordFailure(exception, traceId, tenantId, startedAt);
-            }
-            if (lifecycle.termination() == StreamTerminationReason.CLIENT_CANCEL_REQUESTED) {
-                try {
-                    emitter.send(SseEmitter.event().name("error").data(Map.of(
-                            "code", "STREAM_CANCELLED",
-                            "message", "Streaming completion cancelled",
-                            "traceId", traceId
-                    )));
-                } catch (IOException ignored) {
-                    // The downstream connection may already be unavailable.
+            boolean interrupted = Thread.interrupted();
+            try {
+                StreamTerminationReason hintedReason = terminationHint.get();
+                terminationReason = hintedReason != null
+                        ? hintedReason
+                        : StreamTerminationReason.DOWNSTREAM_WRITE_FAILED;
+                if (execution != null) {
+                    engine.abortStreaming(execution, exception);
                 }
-                emitter.complete();
+                if (!processingCompleted) {
+                    completionService.recordFailure(exception, traceId, tenantId, startedAt);
+                }
+                if (lifecycle.termination() == StreamTerminationReason.CLIENT_CANCEL_REQUESTED) {
+                    try {
+                        emitter.send(SseEmitter.event().name("error").data(Map.of(
+                                "code", "STREAM_CANCELLED",
+                                "message", "Streaming completion cancelled",
+                                "traceId", traceId
+                        )));
+                    } catch (IOException ignored) {
+                        // The downstream connection may already be unavailable.
+                    }
+                    emitter.complete();
+                }
+            } finally {
+                if (interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
         } catch (IOException exception) {
             terminationReason = StreamTerminationReason.DOWNSTREAM_WRITE_FAILED;
@@ -175,7 +191,7 @@ public class StreamingChatCompletionService {
                     ? StreamTerminationReason.UPSTREAM_TRUNCATED
                     : StreamTerminationReason.UPSTREAM_ERROR;
             if (execution != null) {
-                engine.abortStreaming(execution);
+                engine.abortStreaming(execution, exception);
             }
             if (!processingCompleted) {
                 completionService.recordFailure(exception, traceId, tenantId, startedAt);

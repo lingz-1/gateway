@@ -5,12 +5,14 @@ import com.lingshu.common.dto.CacheStatus;
 import com.lingshu.common.dto.ProcessingStep;
 import com.lingshu.common.dto.ProviderResponse;
 import com.lingshu.core.billing.VirtualBillingCharge;
+import com.lingshu.core.billing.BudgetReservation;
 import com.lingshu.core.provider.ModelProvider;
 import com.lingshu.core.tenant.TenantPolicy;
 import com.lingshu.core.tenant.TenantRequestGuard;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ChatProcessingContext {
 
@@ -26,6 +28,9 @@ public final class ChatProcessingContext {
     private String exactCacheKey;
     private double[] semanticEmbedding;
     private VirtualBillingCharge virtualBillingCharge;
+    private BudgetReservation budgetReservation;
+    private final AtomicBoolean budgetFinalizationStarted = new AtomicBoolean();
+    private final AtomicBoolean budgetFinalized = new AtomicBoolean();
     private TenantPolicy tenantPolicy;
     private TenantRequestGuard.Permit policyPermit;
 
@@ -117,6 +122,26 @@ public final class ChatProcessingContext {
 
     public void virtualBillingCharge(VirtualBillingCharge virtualBillingCharge) {
         this.virtualBillingCharge = virtualBillingCharge;
+    }
+
+    public BudgetReservation budgetReservation() {
+        return budgetReservation;
+    }
+
+    public void budgetReservation(BudgetReservation budgetReservation) {
+        this.budgetReservation = budgetReservation;
+    }
+
+    public boolean beginBudgetFinalization() {
+        return budgetReservation != null && budgetFinalizationStarted.compareAndSet(false, true);
+    }
+
+    public void budgetFinalized() {
+        budgetFinalized.set(true);
+    }
+
+    public boolean isBudgetFinalized() {
+        return budgetFinalized.get();
     }
 
     public TenantPolicy tenantPolicy() {

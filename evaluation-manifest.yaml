@@ -76,7 +76,22 @@
         "script": "scripts/test-cache-effect.py",
         "args": ["--mode", "semantic"],
         "timeoutSeconds": 300,
-        "metrics": ["hitRate", "providerCallReduction", "latencyMs.p50", "latencyMs.p95", "cacheHitLatencyMs.p50", "providerPathLatencyMs.p50", "semanticPositiveHitRate", "semanticFalseHitRate"]
+        "metrics": [
+          "hitRate",
+          "providerCallReduction",
+          "latencyMs.p50",
+          "latencyMs.p95",
+          "cacheHitLatencyMs.p50",
+          "providerPathLatencyMs.p50",
+          "semanticPositiveHitRate",
+          "semanticFalseHitRate",
+          "processorLatencyMs.semantic-cache-embedding.p50",
+          "processorLatencyMs.semantic-cache-embedding.p95",
+          "processorLatencyMs.semantic-cache-vector-query.p50",
+          "processorLatencyMs.semantic-cache-vector-query.p95",
+          "processorLatencyMs.semantic-cache-write.p50",
+          "processorLatencyMs.semantic-cache-write.p95"
+        ]
       }
     },
     {

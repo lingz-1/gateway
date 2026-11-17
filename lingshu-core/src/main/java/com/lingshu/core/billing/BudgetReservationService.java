@@ -115,10 +115,7 @@ public class BudgetReservationService {
 
     public boolean release(String reservationId) {
         boolean recorded = ledger.release(reservationId);
-        if (!recorded) {
-            return false;
-        }
-        reservationStore.release(reservationId);
-        return true;
+        boolean released = reservationStore.release(reservationId);
+        return recorded || released;
     }
 }

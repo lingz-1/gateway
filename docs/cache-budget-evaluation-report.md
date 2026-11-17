@@ -13,6 +13,7 @@
 | 预算差额结算 | 真实 Redis + PostgreSQL | 通过 |
 | 并发结算幂等 | 32 路重复结算 | 只结算一次、只生成一条 Outbox |
 | Usage 来源保留 | `PROVIDER_REPORTED`、`ESTIMATED`、`MIXED` | 通过 |
+| 预算接入默认调用链 | 10 个端到端生命周期场景 | 通过 |
 
 ## 两级缓存结果
 
@@ -40,13 +41,28 @@ Embedding 延迟 P50 为 45.379 ms，P95 为 58.409 ms。端到端对照采用 0
 
 | 模式 | 命中率 | Provider 调用减少 | 总体 P50 | 总体 P95 | 命中请求 P50 | 未命中路径 P50 |
 |---|---:|---:|---:|---:|---:|---:|
-| 无缓存 | 0% | 0% | 60.963 ms | 63.789 ms | — | 60.963 ms |
-| Redis 精确缓存 | 25.0% | 25.0% | 61.147 ms | 72.361 ms | 6.778 ms | 62.168 ms |
-| Redis + pgvector 语义缓存 | 37.5% | 37.5% | 94.242 ms | 126.810 ms | 25.437 ms | 106.201 ms |
+| 无缓存 | 0% | 0% | 60.728 ms | 63.939 ms | — | 60.728 ms |
+| Redis 精确缓存 | 25.0% | 25.0% | 61.588 ms | 75.207 ms | 7.577 ms | 62.040 ms |
+| Redis + pgvector 语义缓存 | 37.5% | 37.5% | 93.626 ms | 125.537 ms | 27.422 ms | 107.067 ms |
 
-相对无缓存 P50，Redis 精确命中请求降低 88.9%，语义模式命中请求降低 58.3%。Redis 精确缓存未命中路径额外开销约 1.205 ms；语义缓存未命中路径额外开销约 45.238 ms，主要来自 Embedding 和向量查询。
+相对无缓存 P50，Redis 精确命中请求降低 87.5%，语义模式命中请求降低 54.8%。Redis 精确缓存未命中路径额外开销约 1.312 ms；语义缓存未命中路径额外开销约 46.339 ms。
 
 由于本轮 Stub Provider 只有 40 ms 固定延迟，且命中率不足 50%，两种缓存模式的总体 P50/P95 均没有优于无缓存。可使用的结论是“命中请求显著降低延迟并减少 Provider 调用”，不能表述为“当前两级缓存降低了全部请求的总体 P95”。
+
+### 语义缓存耗时拆分与优化结论
+
+三轮分段指标的中位数如下：
+
+| 阶段 | P50 | P95 |
+|---|---:|---:|
+| Qwen3-Embedding-4B 推理及 HTTP 往返 | 35 ms | 53 ms |
+| pgvector 查询 | 1 ms | 1 ms |
+| 语义缓存完整查询 Processor | 36 ms | 54 ms |
+| pgvector 写入 | 5 ms | 8 ms |
+
+检查确认 Embedding `HttpClient` 已复用，语义未命中生成的向量已保存在请求上下文并复用于写入，不存在重复 Embedding。低风险优化将 2560 维向量序列化从逐元素 `String.format` 改为 `StringBuilder + Double.toString`，减少格式化和 Stream 分配，但不改变租户/模型/采样参数隔离、阈值或查询逻辑。
+
+优化前后三轮中位数对比：总体 P50 94.242 → 93.626 ms、总体 P95 126.810 → 125.537 ms；但命中 P50 25.437 → 27.422 ms、未命中路径 P50 106.201 → 107.067 ms。结果没有形成一致改善，差异应视为本机波动，不能宣称优化成功。当前约 45 ms 额外开销主要受 Embedding 推理支配，继续优化 Java/pgvector 路径的收益有限。
 
 ### Fail-open
 
@@ -69,6 +85,8 @@ Embedding 延迟 P50 为 45.379 ms，P95 为 58.409 ms。端到端对照采用 0
 - Outbox 的 `(reservation_id, event_type)` 唯一约束阻止重复事件；
 - `PROVIDER_REPORTED`、`ESTIMATED`、`MIXED` 原样保留；
 - PostgreSQL 已成功、Redis 更新失败时，相同结算可安全重试并收敛。
+- 默认 Processor Pipeline 已接入预算预扣和实际 Usage 结算；非流式与 SSE 共用同一幂等结算服务。
+- Provider 失败、首块前 Fallback、客户端取消和 SSE 正常结束均有明确的结算或释放路径。
 
 ### 已验证
 
@@ -78,12 +96,21 @@ Embedding 延迟 P50 为 45.379 ms，P95 为 58.409 ms。端到端对照采用 0
 - Redis 差额结算、Ledger 实际结算各重复 10 轮；
 - 数据库写入失败不会提前修改 Redis，数据库成功但 Redis 失败可用同一参数重试；
 - Usage 缺失使用 `ESTIMATED`，混合上报使用 `MIXED`，不会伪装成 Provider 实际账单。
+- 默认 Pipeline 10 个生命周期场景通过：预算不足在 Provider 前返回 429、正常响应结算、主链超额补扣、无 Usage 估算、Provider 失败释放、Fallback 混合 Usage、SSE 完成结算、客户端取消释放、并发重复 trace 幂等及余额一致。
+- 16 路相同 trace 并发进入默认调用链时，预算余额和 Outbox 均只变化一次。
 
 ### 未完成
 
-- 预算预扣/结算服务尚未自动接入聊天 Processor；默认请求链仍使用虚拟计费，不能声称“每次模型请求已执行预算预扣”。
-- PostgreSQL 成功而 Redis 持续失败时依赖调用方重试，尚无自动对账/补偿 Worker。
+- PostgreSQL 成功而 Redis 持续失败时，主链会立即重试 3 次；持续失败仍缺少异步对账/补偿 Worker。
 - 估算 Token 不等于 Provider 最终账单，尚无账单回补对账。
+- 客户端取消且上游未返回最终 Usage 时当前释放预扣；若 Provider 实际产生账单，需要后续账单对账才能回补。
+
+## 测试口径边界
+
+- 缓存性能对照使用本地 40 ms Stub Provider，不代表真实 DeepSeek 或生产 Provider 延迟。
+- Embedding 为本地真实 Qwen3-Embedding-4B，精确缓存为真实 Redis，语义存储为真实 PostgreSQL/pgvector。
+- 预算主链测试的 Provider 为可控 Stub，预算存储和账务存储分别为真实 Redis、PostgreSQL；没有调用真实收费 Provider。
+- 本轮验证的是单机工程闭环与幂等正确性，不是生产集群 SLA 或生产账单一致性证明。
 
 ## 证据与复现
 
@@ -100,12 +127,15 @@ Embedding 延迟 P50 为 45.379 ms，P95 为 58.409 ms。端到端对照采用 0
 - `E:\LingShuData\evaluations\20261116-223941`：240 对样本阈值扫描；
 - `E:\LingShuData\evaluations\20261116-224417`：最终三种缓存模式各 3 轮；
 - `E:\LingShuData\evaluations\20261116-224905`：带误命中率不超过 5% 验收门槛的语义缓存最终回归；
+- `E:\LingShuData\evaluations\20261117-134353`：优化后无缓存和 Redis 精确缓存各 3 轮；语义组因 4B 模型冷启动超过 180 秒未执行，不计入性能结果；测评脚本的健康等待已据此调整为 360 秒；
+- `E:\LingShuData\evaluations\20261117-134939`：Embedding 热就绪后语义缓存最终 3 轮及分段耗时；
+- `E:\LingShuData\evaluations\20261117-135501`：含主链超额补扣在内的 10 个预算 Pipeline 场景与一致性最终回归；
 - `E:\LingShuData\datasets\semantic-eval-samples-240.jsonl`：固定标注数据；
 - `E:\LingShuData\logs\semantic-threshold-raw.json`：逐样本相似度原始数据；
 - `E:\LingShuData\evaluations\cache-effect-raw`：逐请求缓存状态和延迟。
 
 ## 简历安全表述
 
-> 基于 Redis 精确缓存与 Qwen3-Embedding-4B/pgvector 语义缓存构建 240 对合成样本阈值扫描，并使用同一 120 请求集完成三种缓存模式各 3 轮对照；在保守阈值 0.79 下，离线 Precision 100%、Recall 40%、FPR 0%，端到端两级缓存命中率 37.5%、Provider 调用减少 37.5%，命中请求 P50 相对无缓存降低 58.3%。补齐 Redis Lua 预算差额结算，验证 32 路并发重复结算只扣费一次且 Outbox 事件唯一。
+> 基于 Redis 精确缓存与 Qwen3-Embedding-4B/pgvector 语义缓存构建 240 对合成样本阈值扫描，并使用同一 120 请求集完成三种缓存模式各 3 轮对照；在保守阈值 0.79 下，离线 Precision 100%、Recall 40%、FPR 0%，端到端两级缓存命中率 37.5%、Provider 调用减少 37.5%，命中请求 P50 相对无缓存降低 54.8%。将 Redis Lua 预算预扣与实际 Usage 差额结算接入默认非流式/SSE 调用链，10 个生命周期场景通过，并验证并发重复结算只扣费一次且 Outbox 事件唯一。
 
-必须同时说明：样本是合成数据、Provider 是 40 ms Stub、预算服务尚未自动接入聊天 Processor，以上结果不代表生产 SLA。
+必须同时说明：样本是合成数据、Provider 是 40 ms Stub、真实收费 Provider 未参与测评，以上结果不代表生产 SLA。

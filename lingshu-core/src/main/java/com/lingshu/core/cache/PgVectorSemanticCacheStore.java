@@ -15,11 +15,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
-import java.util.stream.DoubleStream;
 
 @Component
 @ConditionalOnProperty(
@@ -191,8 +188,13 @@ public class PgVectorSemanticCacheStore implements SemanticCacheStore {
                             + " dimensions"
             );
         }
-        return DoubleStream.of(embedding)
-                .mapToObj(value -> String.format(Locale.ROOT, "%.12f", value))
-                .collect(Collectors.joining(",", "[", "]"));
+        StringBuilder literal = new StringBuilder(embedding.length * 16).append('[');
+        for (int index = 0; index < embedding.length; index++) {
+            if (index > 0) {
+                literal.append(',');
+            }
+            literal.append(Double.toString(embedding[index]));
+        }
+        return literal.append(']').toString();
     }
 }

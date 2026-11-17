@@ -2,8 +2,10 @@ package com.lingshu.core.processing;
 
 import com.lingshu.common.dto.ChatCompletionRequest;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.core.billing.BudgetRequestCoordinator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -15,9 +17,14 @@ public class ChatProcessorEngine {
     private static final Logger LOGGER = LoggerFactory.getLogger(ChatProcessorEngine.class);
 
     private final List<ChatProcessor> processors;
+    private final BudgetRequestCoordinator budgetCoordinator;
 
-    public ChatProcessorEngine(List<ChatProcessor> processors) {
+    public ChatProcessorEngine(
+            List<ChatProcessor> processors,
+            ObjectProvider<BudgetRequestCoordinator> budgetCoordinator
+    ) {
         this.processors = List.copyOf(processors);
+        this.budgetCoordinator = budgetCoordinator.getIfAvailable();
     }
 
     public ChatProcessingResult execute(ChatCompletionRequest request, String traceId, String tenantId) {
@@ -26,6 +33,9 @@ public class ChatProcessorEngine {
 
         try {
             processRange(context, 0, processors.size());
+        } catch (RuntimeException exception) {
+            finalizeFailedBudget(context, exception);
+            throw exception;
         } finally {
             context.closePolicyPermit();
         }
@@ -48,6 +58,7 @@ public class ChatProcessorEngine {
             }
             processRange(context, providerIndex, processors.size());
         } catch (RuntimeException exception) {
+            finalizeFailedBudget(context, exception);
             context.closePolicyPermit();
             throw exception;
         }
@@ -74,7 +85,20 @@ public class ChatProcessorEngine {
     }
 
     public void abortStreaming(ChatStreamingExecution execution) {
-        execution.context().closePolicyPermit();
+        abortStreaming(execution, null);
+    }
+
+    public void abortStreaming(ChatStreamingExecution execution, RuntimeException failure) {
+        ChatProcessingContext context = execution.context();
+        try {
+            if (failure == null) {
+                releaseBudget(context);
+            } else {
+                finalizeFailedBudget(context, failure);
+            }
+        } finally {
+            context.closePolicyPermit();
+        }
     }
 
     private void processRange(ChatProcessingContext context, int startInclusive, int endExclusive) {
@@ -99,6 +123,32 @@ public class ChatProcessorEngine {
             }
         }
         throw new IllegalStateException("Provider invoke processor is not configured");
+    }
+
+    private void finalizeFailedBudget(ChatProcessingContext context, RuntimeException failure) {
+        if (budgetCoordinator == null || !context.beginBudgetFinalization()) {
+            return;
+        }
+        try {
+            budgetCoordinator.fail(context.budgetReservation(), failure);
+            context.budgetFinalized();
+        } catch (RuntimeException budgetFailure) {
+            failure.addSuppressed(budgetFailure);
+            LOGGER.error(
+                    "Budget failure compensation failed traceId={} tenantId={}",
+                    context.traceId(),
+                    context.tenantId(),
+                    budgetFailure
+            );
+        }
+    }
+
+    private void releaseBudget(ChatProcessingContext context) {
+        if (budgetCoordinator == null || !context.beginBudgetFinalization()) {
+            return;
+        }
+        budgetCoordinator.release(context.budgetReservation());
+        context.budgetFinalized();
     }
 
     private ChatProcessingResult result(ChatProcessingContext context, long startedAt) {

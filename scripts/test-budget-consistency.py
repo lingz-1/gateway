@@ -78,6 +78,7 @@ def main() -> int:
         "com.lingshu.core.billing.JdbcVirtualBillingStoreIntegrationTest",
         "com.lingshu.core.billing.BudgetReservationServiceTest",
         "com.lingshu.core.billing.BudgetSettlementIntegrationTest",
+        "com.lingshu.core.billing.BudgetPipelineIntegrationTest",
     ))
     if reports_available:
         redis_root, redis_names = read_report(
@@ -90,6 +91,8 @@ def main() -> int:
             repo, "com.lingshu.core.billing.BudgetReservationServiceTest")
         settlement_root, settlement_names = read_report(
             repo, "com.lingshu.core.billing.BudgetSettlementIntegrationTest")
+        pipeline_root, pipeline_names = read_report(
+            repo, "com.lingshu.core.billing.BudgetPipelineIntegrationTest")
         redis_concurrency = count_method(
             redis_names, "concurrentReservationsNeverOverspendAndSettlementsRemainIdempotent")
         redis_duplicates = count_method(
@@ -120,13 +123,15 @@ def main() -> int:
             "settlesOverageAndPreservesEstimatedUsageSource",
             "concurrentDuplicateSettlementChangesBalanceOnceAndCreatesOneOutboxEvent",
         })
+        pipeline_tests = len(pipeline_names)
     else:
-        redis_root = ledger_root = virtual_root = service_root = settlement_root = ElementTree.Element(
+        redis_root = ledger_root = virtual_root = service_root = settlement_root = pipeline_root = ElementTree.Element(
             "testsuite", {"failures": "-1", "errors": "-1"})
         redis_concurrency = redis_duplicates = redis_delta_settlements = 0
         ledger_confirms = ledger_releases = ledger_settlements = virtual_atomic = 0
         recovery_tests = usage_source_tests = 0
         vertical_settlement_tests = 0
+        pipeline_tests = 0
 
     checks = {
         "containers_ready": compose_result.returncode == 0,
@@ -140,9 +145,10 @@ def main() -> int:
         "database_failure_recovery_verified": recovery_tests == 2,
         "usage_sources_preserved": usage_source_tests == 3,
         "redis_postgres_vertical_settlement_verified": vertical_settlement_tests == 3,
+        "default_pipeline_budget_lifecycle_verified": pipeline_tests == 10,
         "virtual_balance_atomicity_verified": virtual_atomic == 1,
         "budget_reports_have_no_failures": all(passed(root) for root in (
-            redis_root, ledger_root, virtual_root, service_root, settlement_root)),
+            redis_root, ledger_root, virtual_root, service_root, settlement_root, pipeline_root)),
     }
     result = {
         "redisConcurrencyRepetitions": redis_concurrency,
@@ -154,6 +160,7 @@ def main() -> int:
         "databaseRecoveryTests": recovery_tests,
         "usageSourceTests": usage_source_tests,
         "verticalSettlementTests": vertical_settlement_tests,
+        "pipelineLifecycleTests": pipeline_tests,
         "virtualBalanceAtomicityTests": virtual_atomic,
         "checks": checks,
     }

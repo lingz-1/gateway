@@ -136,6 +136,7 @@ lingshu:
       kafka-topic: ${LINGSHU_BILLING_KAFKA_TOPIC:lingshu.billing.events}
     redis-key-prefix: ${LINGSHU_BILLING_REDIS_KEY_PREFIX:lingshu:budget:}
     reservation-ttl: ${LINGSHU_BILLING_RESERVATION_TTL:5m}
+    reservation-default-output-units: ${LINGSHU_BILLING_RESERVATION_DEFAULT_OUTPUT_UNITS:1024}
     jdbc-url: ${LINGSHU_BILLING_POSTGRES_URL:jdbc:postgresql://127.0.0.1:54320/lingshu}
     username: ${LINGSHU_BILLING_POSTGRES_USER:lingshu}
     password: ${LINGSHU_BILLING_POSTGRES_PASSWORD:${LINGSHU_POSTGRES_PASSWORD:}}

@@ -2,6 +2,7 @@ package com.lingshu.core.processing;
 
 import com.lingshu.common.dto.ProviderRequest;
 import com.lingshu.common.dto.ProviderResponse;
+import com.lingshu.common.dto.TokenUsageSource;
 import com.lingshu.core.provider.ModelProvider;
 import com.lingshu.core.provider.ModelProviderRouter;
 import com.lingshu.core.provider.ProviderRoutingException;
@@ -121,6 +122,7 @@ public class ProviderInvokeProcessor implements ChatProcessor {
                 response.content(),
                 response.inputTokens() + failedInputTokens,
                 response.outputTokens() + failedOutputTokens,
+                TokenUsageSource.MIXED,
                 response.finishReason(),
                 response.toolCalls()
         );

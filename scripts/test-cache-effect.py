@@ -52,12 +52,18 @@ def request(url: str, tenant_id: str, prompt: str) -> dict[str, object]:
     try:
         with urllib.request.urlopen(call, timeout=30) as response:
             payload = json.loads(response.read().decode("utf-8"))
+            processors = payload.get("metadata", {}).get("processors", [])
             return {
                 "status": response.status,
                 "latencyMs": round((time.perf_counter() - started) * 1000, 3),
                 "cacheStatus": str(payload.get("metadata", {}).get(
                     "cacheStatus", response.headers.get("X-LingShu-Cache", "UNKNOWN")
                 )).upper(),
+                "processorDurationsMs": {
+                    str(step["name"]): float(step["durationMs"])
+                    for step in processors
+                    if "name" in step and "durationMs" in step
+                },
             }
     except urllib.error.HTTPError as exception:
         return {
@@ -150,6 +156,20 @@ def main() -> int:
     semantic_false_hits = sum(
         sample["cacheStatus"] == "SEMANTIC" for sample in negative_samples
     )
+    processor_names = (
+        "semantic-cache-embedding",
+        "semantic-cache-vector-query",
+        "semantic-cache-lookup",
+        "semantic-cache-write",
+    )
+    processor_latency = {
+        name: distribution([
+            float(sample["processorDurationsMs"][name])
+            for sample in successes
+            if name in sample.get("processorDurationsMs", {})
+        ])
+        for name in processor_names
+    }
     result = {
         "mode": args.mode,
         "dataset": str(Path(args.dataset)),
@@ -163,6 +183,7 @@ def main() -> int:
         "latencyMs": distribution(all_latencies),
         "cacheHitLatencyMs": distribution(hit_latencies),
         "providerPathLatencyMs": distribution(miss_latencies),
+        "processorLatencyMs": processor_latency,
         "semanticPositiveHitRate": round(
             semantic_true_hits / len(positive_samples), 6
         ) if positive_samples else 0.0,

@@ -6,6 +6,8 @@ import com.lingshu.core.cache.SemanticCacheService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.concurrent.TimeUnit;
+
 @Component
 @Order(175)
 public class SemanticCacheLookupProcessor implements ChatProcessor {
@@ -31,9 +33,21 @@ public class SemanticCacheLookupProcessor implements ChatProcessor {
 
     @Override
     public void process(ChatProcessingContext context) {
-        cacheService.tryEmbed(context.request()).ifPresent(embedding -> {
+        long embeddingStartedAt = System.nanoTime();
+        var embeddingResult = cacheService.tryEmbed(context.request());
+        context.addStep(
+                "semantic-cache-embedding",
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - embeddingStartedAt)
+        );
+        embeddingResult.ifPresent(embedding -> {
             context.semanticEmbedding(embedding);
-            cacheService.find(context.tenantId(), context.request(), embedding)
+            long vectorQueryStartedAt = System.nanoTime();
+            var matchResult = cacheService.find(context.tenantId(), context.request(), embedding);
+            context.addStep(
+                    "semantic-cache-vector-query",
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - vectorQueryStartedAt)
+            );
+            matchResult
                     .ifPresent(match -> {
                         context.providerResponse(match.response());
                         context.cacheStatus(CacheStatus.SEMANTIC);

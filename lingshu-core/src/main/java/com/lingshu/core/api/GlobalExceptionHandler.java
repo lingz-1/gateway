@@ -4,6 +4,7 @@ import com.lingshu.common.contracts.ApiError;
 import com.lingshu.common.contracts.ErrorCode;
 import com.lingshu.core.billing.VirtualBillingCharge;
 import com.lingshu.core.billing.VirtualBillingService;
+import com.lingshu.core.billing.BudgetExceededException;
 import com.lingshu.core.provider.ProviderRoutingException;
 import com.lingshu.core.streaming.StreamLifecycleConflictException;
 import com.lingshu.core.streaming.StreamRoutingUnavailableException;
@@ -69,6 +70,19 @@ public class GlobalExceptionHandler {
         HttpStatus status = exception.rateLimited() ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.FORBIDDEN;
         ErrorCode code = exception.rateLimited() ? ErrorCode.RATE_LIMITED : ErrorCode.INVALID_REQUEST;
         return error(status, code, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(BudgetExceededException.class)
+    public ResponseEntity<ApiError> handleBudgetExceeded(
+            BudgetExceededException exception,
+            HttpServletRequest request
+    ) {
+        return error(
+                HttpStatus.TOO_MANY_REQUESTS,
+                ErrorCode.BUDGET_EXCEEDED,
+                exception.getMessage(),
+                request
+        );
     }
 
     @ExceptionHandler(StreamLifecycleConflictException.class)

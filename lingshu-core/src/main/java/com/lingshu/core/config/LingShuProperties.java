@@ -262,6 +262,7 @@ public class LingShuProperties {
         private final Outbox outbox = new Outbox();
         private String redisKeyPrefix = "lingshu:budget:";
         private java.time.Duration reservationTtl = java.time.Duration.ofMinutes(5);
+        private int reservationDefaultOutputUnits = 1024;
         private String jdbcUrl = "jdbc:postgresql://127.0.0.1:54320/lingshu";
         private String username = "lingshu";
         private String password = "";
@@ -297,6 +298,14 @@ public class LingShuProperties {
 
         public void setReservationTtl(java.time.Duration reservationTtl) {
             this.reservationTtl = reservationTtl;
+        }
+
+        public int getReservationDefaultOutputUnits() {
+            return reservationDefaultOutputUnits;
+        }
+
+        public void setReservationDefaultOutputUnits(int reservationDefaultOutputUnits) {
+            this.reservationDefaultOutputUnits = reservationDefaultOutputUnits;
         }
 
         public String getJdbcUrl() {

@@ -134,6 +134,18 @@ class BudgetReservationServiceTest {
         assertEquals(2, store.settlements.size());
     }
 
+    @Test
+    void retriesRedisReleaseAfterLedgerAlreadyPersistedRelease() {
+        FakeStore store = new FakeStore();
+        FakeLedger ledger = new FakeLedger();
+        ledger.allowRelease = false;
+
+        assertTrue(service(store, ledger).release("r-release"));
+
+        assertEquals(List.of("r-release"), ledger.releases);
+        assertEquals(List.of("r-release"), store.releases);
+    }
+
     private BudgetSettlement settlement(
             String reservationId,
             long reserved,
@@ -192,6 +204,7 @@ class BudgetReservationServiceTest {
         private final List<String> settlements = new ArrayList<>();
         private BudgetSettlement settlement;
         private boolean failSettlement;
+        private boolean allowRelease = true;
 
         @Override
         public void recordReservation(BudgetReservation reservation) {
@@ -223,7 +236,7 @@ class BudgetReservationServiceTest {
         @Override
         public boolean release(String reservationId) {
             releases.add(reservationId);
-            return true;
+            return allowRelease;
         }
     }
 }
